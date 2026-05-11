@@ -1,24 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
 
-const PROVIDERS = [
-  { value: 'openai', label: 'OpenAI (GPT)', placeholder: 'sk-...' },
-  { value: 'gemini', label: 'Google Gemini', placeholder: 'AIza...' },
-]
-
-const SYSTEM_PROMPT = `You are a Kubernetes infrastructure assistant with expertise in:
-- kind cluster deployments and configuration
-- Release management (R1/R2/R3/R4) with specific k8s versions
-- Deviation detection and remediation between cluster releases
-- Greenfield (new cluster) and Brownfield (upgrade path) scenarios
-Be concise and practical. When asked about commands, provide exact CLI examples.`
-
 export default function ChatBox() {
-  const [provider, setProvider] = useState('openai')
-  const [apiKey, setApiKey] = useState('')
+  const [providers, setProviders] = useState([])
+  const [provider, setProvider] = useState('')
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Hello! I can help with Kubernetes cluster management, release upgrades, and deviation analysis. Set your API key above to start chatting.',
+      content: `👋 Hi! I'm your Kubernetes Dashboard assistant. What would you like to work on today?
+
+• **Clusters** — Deploy new clusters, check status, or analyze deviations
+• **Applications** — Deploy apps, scan for version drift, or fix deviations
+• **Troubleshooting** — Diagnose issues with services, Docker, or connectivity
+
+Just pick one or ask me anything!`,
     },
   ])
   const [input, setInput] = useState('')
@@ -26,12 +20,29 @@ export default function ChatBox() {
   const [error, setError] = useState('')
   const bottomRef = useRef(null)
 
+  // Fetch available providers from backend
+  useEffect(() => {
+    fetch('/api/chat/providers')
+      .then(r => r.json())
+      .then(d => {
+        const list = d.providers || []
+        setProviders(list)
+        // Auto-select first ready provider
+        const ready = list.find(p => p.ready)
+        if (ready) setProvider(ready.value)
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const currentProvider = providers.find(p => p.value === provider)
+  const isReady = currentProvider?.ready
+
   const send = async () => {
-    if (!input.trim() || !apiKey.trim() || loading) return
+    if (!input.trim() || loading || !isReady) return
     setError('')
 
     const userMsg = { role: 'user', content: input.trim() }
@@ -41,14 +52,11 @@ export default function ChatBox() {
     setLoading(true)
 
     try {
-      const apiMessages = [
-        { role: 'user', content: SYSTEM_PROMPT },
-        ...next.filter(m => m.role !== 'system'),
-      ]
+      const apiMessages = next.filter(m => m.role !== 'system')
       const resp = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages, provider, api_key: apiKey }),
+        body: JSON.stringify({ messages: apiMessages, provider }),
       })
       if (!resp.ok) {
         const err = await resp.json()
@@ -67,6 +75,35 @@ export default function ChatBox() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
   }
 
+  const quickActions = [
+    { label: '🖥️ Clusters', text: 'I want to work with clusters — deploy, check status, or analyze deviations.' },
+    { label: '📦 Applications', text: 'I want to work with applications — deploy apps, check versions, or fix deviations.' },
+    { label: '🔍 Troubleshoot', text: 'I need help troubleshooting an issue with my setup.' },
+    { label: '📖 How does this app work?', text: 'Explain how this Kubernetes Deviation Dashboard works and what I can do with it.' },
+  ]
+
+  const sendQuickAction = (text) => {
+    setInput(text)
+    // Trigger send on next tick after state update
+    setTimeout(() => {
+      const userMsg = { role: 'user', content: text }
+      setMessages(prev => [...prev, userMsg])
+      setLoading(true)
+      setError('')
+      fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [userMsg], provider }),
+      })
+        .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || 'API error') }); return r.json() })
+        .then(data => setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]))
+        .catch(e => setError(e.message))
+        .finally(() => { setLoading(false); setInput('') })
+    }, 0)
+  }
+
+  const showSuggestions = messages.length === 1 && !loading
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header */}
@@ -83,20 +120,21 @@ export default function ChatBox() {
         <select
           value={provider}
           onChange={e => setProvider(e.target.value)}
-          style={{ marginBottom: 6, fontSize: 12 }}
+          style={{ marginBottom: 0, fontSize: 12 }}
         >
-          {PROVIDERS.map(p => (
-            <option key={p.value} value={p.value}>{p.label}</option>
+          {providers.map(p => (
+            <option key={p.value} value={p.value}>
+              {p.label} {p.ready ? '✓' : '(not configured)'}
+            </option>
           ))}
+          {providers.length === 0 && <option value="">Loading...</option>}
         </select>
 
-        <input
-          type="password"
-          placeholder={PROVIDERS.find(p => p.value === provider)?.placeholder}
-          value={apiKey}
-          onChange={e => setApiKey(e.target.value)}
-          style={{ marginBottom: 0, fontSize: 12 }}
-        />
+        {currentProvider && !currentProvider.ready && (
+          <div style={{ fontSize: 11, color: '#d29922', marginTop: 6 }}>
+            ⚠ Set the API key in <code>.env</code> file and restart the backend
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -128,6 +166,27 @@ export default function ChatBox() {
             <span className="spinner" /> Thinking...
           </div>
         )}
+        {showSuggestions && isReady && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+            {quickActions.map((qa, i) => (
+              <button
+                key={i}
+                className="btn-gray"
+                onClick={() => sendQuickAction(qa.text)}
+                style={{
+                  fontSize: 12,
+                  padding: '6px 12px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  border: '1px solid #30363d',
+                  borderRadius: 8,
+                }}
+              >
+                {qa.label}
+              </button>
+            ))}
+          </div>
+        )}
         {error && (
           <div style={{ color: '#f85149', fontSize: 12, padding: '6px 0' }}>
             ⚠ {error}
@@ -149,13 +208,14 @@ export default function ChatBox() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKey}
-          placeholder="Ask about clusters, releases, deviations…"
+          placeholder={isReady ? 'Ask about clusters, releases, deviations…' : 'Configure an LLM provider in .env first'}
+          disabled={!isReady}
           style={{ flex: 1, resize: 'none', fontSize: 13, marginBottom: 0 }}
         />
         <button
           className="btn-blue"
           onClick={send}
-          disabled={!input.trim() || !apiKey || loading}
+          disabled={!input.trim() || !isReady || loading}
           style={{ alignSelf: 'flex-end', whiteSpace: 'nowrap' }}
         >
           Send

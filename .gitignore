@@ -8,3 +8,4 @@ generated-kind-configs*/
 .venv/
 *.egg-info/
 *.log
+.env

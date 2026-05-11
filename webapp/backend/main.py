@@ -14,6 +14,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import httpx
 
+# Load .env from project root (keys stay local, never sent to browser)
+_ENV_FILE = Path(__file__).parent.parent.parent / ".env"
+if _ENV_FILE.exists():
+    with _ENV_FILE.open() as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                _v = _v.strip().strip('"').strip("'")
+                os.environ.setdefault(_k.strip(), _v)
+
 # Add MCP_Agents to path so we can import agent logic directly
 MCP_AGENTS = Path(__file__).parent.parent.parent / "MCP_Agents"
 sys.path.insert(0, str(MCP_AGENTS))
@@ -76,8 +87,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[ChatMessage]
-    provider: str = "openai"   # "openai" or "gemini"
-    api_key: str
+    provider: str = "openai"   # "openai", "gemini", or "local"
     model: str | None = None
 
 
@@ -176,20 +186,117 @@ def api_scan(target_release: str) -> dict[str, Any]:
 
 # ─── Chat — LLM proxy ─────────────────────────────────────────────────────────
 
+_SYSTEM_PROMPT = """\
+You are the built-in AI assistant for the **Kubernetes Deviation Dashboard**, \
+a web application that manages multi-version Kubernetes clusters and their applications.
+
+## Application Overview
+This dashboard runs on WSL2 (Ubuntu) and manages "kind" (Kubernetes IN Docker) clusters \
+across 4 release baselines (R1–R4), each pinned to a specific Kubernetes version:
+  - R1 → k8s 1.27  |  R2 → k8s 1.28  |  R3 → k8s 1.29  |  R4 → k8s 1.30
+
+## Architecture
+- **Frontend**: React 18 + Vite on port 3000
+- **Backend**: FastAPI on port 8000 (proxied from frontend via /api/*)
+- **MCP Agents**: Artifact (8765), Deployment (8766), Deviation (8767) — SSE transport
+- **Local LLM**: Ollama + Gemma on port 11434
+- **Config files**: `input/` (deployment intent) and `release/` (baselines) directories under MCP_Agents/
+
+## Two Main Tabs
+
+### 🖥️ Clusters Tab
+**Greenfield — Deploy**: Deploy new kind clusters by selecting a release (R1–R4) and configuring \
+cluster name, subnets, and host port. Shows running clusters with version and release badge.
+**Brownfield — Deviations**: Compare a running cluster against a target release to detect \
+version, CPU, and memory deviations. Shows remediation commands. Also supports release-to-release diff.
+
+### 📦 Applications Tab
+**Greenfield — Deploy**: Select a cluster and release, then deploy applications (nginx, httpd, memcached) \
+defined in that release. Shows currently deployed apps with release detection badges.
+**Brownfield — Deviations**: Scan all apps defined in a release against what's actually running. \
+Detects image mismatches, replica mismatches, and missing apps. Offers per-app "Fix" buttons and "Fix All".
+
+## Release Application Baselines (per release)
+Each release defines expected app versions. Examples for nginx:
+  R1: nginx:1.24.0-alpine  |  R2: nginx:1.25.5-alpine  |  R3: nginx:1.26.2-alpine  |  R4: nginx:1.27.0-alpine
+Other apps: httpd (2.4.57→2.4.60), memcached (1.6.21→1.6.29)
+
+## Key Concepts
+- **Greenfield**: First-time deployment of clusters or apps from scratch.
+- **Brownfield**: Analyzing existing running clusters/apps against expected release baselines, \
+  detecting deviations, and remediating them.
+- **Deviation**: Any difference between what's running and what the release baseline specifies \
+  (wrong k8s version, wrong image, wrong replica count, missing app, etc.)
+- **Release badge**: UI shows which release a cluster or app matches based on its version/image.
+
+## Common User Tasks
+1. **Deploy a cluster**: Clusters tab → Greenfield → select release → fill form → Deploy
+2. **Check cluster health**: Clusters tab → Greenfield → "Running Clusters" section
+3. **Find deviations**: Clusters/Apps tab → Brownfield → select cluster + release → Scan/Analyze
+4. **Fix app deviations**: Apps tab → Brownfield → Scan → click "Fix" or "Fix All"
+5. **Deploy apps**: Apps tab → Greenfield → select cluster + release → check apps → Deploy
+
+## Troubleshooting
+- **"No clusters running"**: Check Docker is running, then run `./start.sh` or deploy via Greenfield.
+- **Docker permission error**: Run `sudo chmod 666 /var/run/docker.sock`
+- **Backend not responding**: Check `http://127.0.0.1:8000/api/releases` or restart with `./start.sh`
+- **Service startup**: Use `./start.sh` from the project root to start all 6 services.
+- **Logs**: Check `.logs/` directory (backend_api.log, frontend_web.log, etc.)
+
+## CLI Commands
+- `kind get clusters` — list running clusters
+- `kubectl --context kind-<name> get nodes` — check cluster nodes
+- `kubectl --context kind-<name> get deployments` — list deployed apps
+- `./start.sh` — start all services (idempotent, skips running ones)
+
+Be concise, practical, and helpful. Provide exact commands when relevant. \
+When explaining UI steps, reference the tab names and button labels. \
+If you don't know something specific about the running state, suggest the user \
+check via the dashboard UI or relevant kubectl commands.\
+"""
+
+@app.get("/api/chat/providers")
+def api_chat_providers() -> dict[str, Any]:
+    """Return available LLM providers based on configured env keys."""
+    providers = []
+    if os.environ.get("OPENAI_API_KEY"):
+        providers.append({"value": "openai", "label": "OpenAI (GPT)", "ready": True})
+    else:
+        providers.append({"value": "openai", "label": "OpenAI (GPT)", "ready": False})
+
+    if os.environ.get("GEMINI_API_KEY"):
+        providers.append({"value": "gemini", "label": "Google Gemini", "ready": True})
+    else:
+        providers.append({"value": "gemini", "label": "Google Gemini", "ready": False})
+
+    # Local LLM (Ollama) — always shown, ready if Ollama is reachable
+    ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    providers.append({"value": "local", "label": "Local LLM (Gemma/Ollama)", "ready": True, "url": ollama_url})
+
+    return {"providers": providers}
+
+
 @app.post("/api/chat")
 async def api_chat(body: ChatRequest) -> dict[str, Any]:
+    # Prepend the system context so the LLM knows the app inside-out
+    system_msg = ChatMessage(role="system", content=_SYSTEM_PROMPT)
+    all_messages = [system_msg] + list(body.messages)
+
     if body.provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured in .env")
         model = body.model or "gpt-4o-mini"
         payload = {
             "model": model,
-            "messages": [{"role": m.role, "content": m.content} for m in body.messages],
+            "messages": [{"role": m.role, "content": m.content} for m in all_messages],
         }
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 "https://api.openai.com/v1/chat/completions",
                 json=payload,
                 headers={
-                    "Authorization": f"Bearer {body.api_key}",
+                    "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
             )
@@ -199,16 +306,18 @@ async def api_chat(body: ChatRequest) -> dict[str, Any]:
         return {"reply": data["choices"][0]["message"]["content"]}
 
     elif body.provider == "gemini":
-        model = body.model or "gemini-1.5-flash"
-        # Convert messages to Gemini format
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured in .env")
+        model = body.model or "gemini-2.5-flash"
         contents = []
-        for m in body.messages:
-            role = "user" if m.role == "user" else "model"
+        for m in all_messages:
+            role = "user" if m.role in ("user", "system") else "model"
             contents.append({"role": role, "parts": [{"text": m.content}]})
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={body.api_key}"
+            f"{model}:generateContent?key={api_key}"
         )
         payload = {"contents": contents}
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -220,6 +329,30 @@ async def api_chat(body: ChatRequest) -> dict[str, Any]:
             reply = data["candidates"][0]["content"]["parts"][0]["text"]
         except (KeyError, IndexError) as e:
             raise HTTPException(status_code=500, detail=f"Unexpected Gemini response: {e}")
+        return {"reply": reply}
+
+    elif body.provider == "local":
+        ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        model = body.model or "gemma3:1b"
+        payload = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in all_messages],
+            "stream": False,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                resp = await client.post(f"{ollama_url}/api/chat", json=payload)
+        except httpx.ConnectError:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Cannot reach Ollama at {ollama_url}. Is it running? Try: ollama serve",
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        data = resp.json()
+        reply = data.get("message", {}).get("content", "")
+        if not reply:
+            raise HTTPException(status_code=500, detail="Empty response from Ollama")
         return {"reply": reply}
 
     raise HTTPException(status_code=400, detail=f"Unknown provider '{body.provider}'")
