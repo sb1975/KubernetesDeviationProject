@@ -2,6 +2,80 @@
 
 A full-stack Kubernetes deviation management platform with cluster and application lifecycle tracking, brownfield deviation analysis, and AI-powered chat assistant.
 
+## Architecture
+
+![Architecture Diagram](docs/architecture.png)
+
+<details>
+<summary>📐 Architecture Overview (text version)</summary>
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Browser (User)                                                     │
+│  http://localhost:3000                                               │
+└──────────┬──────────────────┬───────────────────┬───────────────────┘
+           │                  │                   │
+    ┌──────▼──────┐   ┌──────▼──────┐     ┌──────▼──────┐
+    │ 🖥️ Clusters  │   │ 📦 Apps     │     │ 🤖 Chat     │
+    │  Tab        │   │  Tab        │     │  Panel      │
+    ├─────────────┤   ├─────────────┤     │             │
+    │ Greenfield  │   │ Greenfield  │     │ Quick-action│
+    │ (Deploy)    │   │ (Deploy)    │     │ buttons     │
+    ├─────────────┤   ├─────────────┤     │             │
+    │ Brownfield  │   │ Brownfield  │     │ Context-    │
+    │ (Deviations)│   │ (Scan/Fix)  │     │ aware AI    │
+    └──────┬──────┘   └──────┬──────┘     └──────┬──────┘
+           │                  │                   │
+           └──────────┬───────┘                   │
+                      │                           │
+              ┌───────▼───────────────────────────▼───────┐
+              │  FastAPI Backend (Port 8000)               │
+              │  /api/greenfield/* /api/brownfield/*       │
+              │  /api/apps/*      /api/chat                │
+              │                   ┌───────────┐            │
+              │  Loads .env ────► │ .env file │            │
+              │  (API keys)       │ (gitignored)│          │
+              └───┬────────┬──────┴────────┬───┴──────────┘
+                  │        │               │
+        ┌─────────▼──┐ ┌──▼─────────┐ ┌───▼──────────┐
+        │ Artifact   │ │ Deployment │ │ Deviation    │
+        │ MCP :8765  │ │ MCP :8766  │ │ MCP :8767    │
+        │ (generate/ │ │ (deploy/   │ │ (analyze/    │
+        │  deploy)   │ │  list/fix) │ │  scan)       │
+        └─────┬──────┘ └──┬─────────┘ └───┬──────────┘
+              │           │                │
+              ▼           ▼                ▼
+     ┌──────────────────────────────────────────┐
+     │  releases.py (Loader)                     │
+     │  ├── release/cluster_release.json         │
+     │  │   (R1=1.27, R2=1.28, R3=1.29, R4=1.30)│
+     │  └── release/application_release.json     │
+     │      (nginx, httpd, memcached per release)│
+     └──────────────────────────────────────────┘
+              │           │                │
+              ▼           ▼                ▼
+     ┌──────────────────────────────────────────┐
+     │  Kind Clusters (Docker)                   │
+     │  ┌────────┐  ┌────────┐  ┌────────┐     │
+     │  │ c1     │  │ c2     │  │ c3     │     │
+     │  │ k8s    │  │ k8s    │  │ k8s    │     │
+     │  │ 1.30   │  │ 1.29   │  │ 1.28   │     │
+     │  │ (R4)   │  │ (R3)   │  │ (R2)   │     │
+     │  └────────┘  └────────┘  └────────┘     │
+     └──────────────────────────────────────────┘
+
+     LLM Providers (for /api/chat):
+     ┌──────────────┬──────────────┬──────────────┐
+     │ OpenAI       │ Google       │ Ollama       │
+     │ GPT-4o-mini  │ Gemini 2.5   │ Gemma 3 1B   │
+     │              │ Flash        │ (local)      │
+     └──────────────┴──────────────┴──────────────┘
+```
+
+</details>
+
+> **Regenerate the diagram**: `python3 docs/architecture_diagram.py` (requires `pip install diagrams` + `apt install graphviz`)
+
 ## Pre-Requisites
 
 Before running this project, ensure the following are installed and configured:
