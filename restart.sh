@@ -30,6 +30,101 @@ info() { echo -e "        $1"; }
 
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
+# ── Dependency checks & auto-install ─────────────────────────────────────────
+
+ensure_deps() {
+  echo "── Checking dependencies ──"
+  local need_fix=0
+
+  # 1. Python venv
+  if [[ ! -x "$PYTHON_BIN" ]]; then
+    warn "Python venv not found at $PYTHON_BIN — creating it"
+    python3 -m venv "$(dirname "$(dirname "$PYTHON_BIN")")"
+    ok "Created Python venv"
+    need_fix=1
+  fi
+
+  # 2. Python packages
+  if ! "$PYTHON_BIN" -c "import mcp, fastapi, uvicorn, httpx" 2>/dev/null; then
+    warn "Missing Python packages — installing"
+    "$(dirname "$PYTHON_BIN")/pip" install --quiet --upgrade pip
+    "$(dirname "$PYTHON_BIN")/pip" install --quiet mcp fastapi uvicorn httpx python-dotenv
+    ok "Python packages installed"
+    need_fix=1
+  else
+    ok "Python packages OK"
+  fi
+
+  # Update UVICORN_BIN in case it was just installed
+  UVICORN_BIN="$(dirname "$PYTHON_BIN")/uvicorn"
+
+  # 3. Node modules
+  if [[ ! -d "$ROOT_DIR/webapp/node_modules" ]]; then
+    warn "Frontend node_modules missing — installing"
+    (cd "$ROOT_DIR/webapp" && npm install --silent)
+    ok "npm packages installed"
+    need_fix=1
+  else
+    ok "npm packages OK"
+  fi
+
+  # 4. .env file
+  if [[ ! -f "$ROOT_DIR/.env" ]]; then
+    if [[ -f "$ROOT_DIR/.env.example" ]]; then
+      cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
+      warn "Created .env from template — edit it to add your API keys"
+    fi
+  fi
+
+  # 5. kind (for cluster operations)
+  if ! command -v kind >/dev/null 2>&1; then
+    warn "kind not found — installing"
+    local arch
+    arch=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+    curl -fsSL -o /tmp/kind "https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-${arch}"
+    chmod +x /tmp/kind
+    sudo mv /tmp/kind /usr/local/bin/kind 2>/dev/null || mv /tmp/kind "$HOME/.local/bin/kind"
+    ok "kind installed: $(kind --version)"
+    need_fix=1
+  else
+    ok "kind OK"
+  fi
+
+  # 6. kubectl
+  if ! command -v kubectl >/dev/null 2>&1; then
+    warn "kubectl not found — installing"
+    local arch
+    arch=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+    curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/${arch}/kubectl"
+    chmod +x /tmp/kubectl
+    sudo mv /tmp/kubectl /usr/local/bin/kubectl 2>/dev/null || mv /tmp/kubectl "$HOME/.local/bin/kubectl"
+    ok "kubectl installed"
+    need_fix=1
+  else
+    ok "kubectl OK"
+  fi
+
+  # 7. Docker
+  if ! docker info >/dev/null 2>&1; then
+    # Try fixing socket permissions (common WSL2 issue)
+    if [[ -S /var/run/docker.sock ]]; then
+      sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+    fi
+    if docker info >/dev/null 2>&1; then
+      ok "Docker OK (fixed permissions)"
+    else
+      warn "Docker not reachable — cluster operations will fail"
+    fi
+  else
+    ok "Docker OK"
+  fi
+
+  if [[ $need_fix -eq 0 ]]; then
+    ok "All dependencies satisfied"
+  fi
+  echo
+}
+
 stop_service() {
   local name="$1"
   local pid_file="$RUN_DIR/${name}.pid"
@@ -169,6 +264,7 @@ restart_all() {
   echo " Restarting All Services"
   echo "============================================="
   echo
+  ensure_deps
   restart_mcp
   restart_backend
   restart_frontend

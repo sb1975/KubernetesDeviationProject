@@ -71,12 +71,52 @@ start_service() {
 echo "[INFO] Root: $ROOT_DIR"
 echo "[INFO] Logs: $LOG_DIR"
 
-# Optional: non-fatal permission adjustment for Docker socket.
-if [[ -S /var/run/docker.sock ]]; then
-  chmod 666 /var/run/docker.sock >/dev/null 2>&1 || true
+# ── Auto-install missing dependencies ────────────────────────────────────────
+
+# Python venv
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "[INFO] Python venv not found — creating at $(dirname "$(dirname "$PYTHON_BIN")")"
+  python3 -m venv "$(dirname "$(dirname "$PYTHON_BIN")")"
 fi
 
-# Ensure frontend dependencies are present.
+# Python packages
+if ! "$PYTHON_BIN" -c "import mcp, fastapi, uvicorn, httpx" 2>/dev/null; then
+  echo "[INFO] Installing Python packages..."
+  "$(dirname "$PYTHON_BIN")/pip" install --quiet --upgrade pip
+  "$(dirname "$PYTHON_BIN")/pip" install --quiet mcp fastapi uvicorn httpx python-dotenv
+fi
+UVICORN_BIN="$(dirname "$PYTHON_BIN")/uvicorn"
+
+# kind
+if ! command -v kind >/dev/null 2>&1; then
+  echo "[INFO] Installing kind..."
+  _ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+  curl -fsSL -o /tmp/kind "https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-${_ARCH}"
+  chmod +x /tmp/kind
+  sudo mv /tmp/kind /usr/local/bin/kind 2>/dev/null || { mkdir -p "$HOME/.local/bin"; mv /tmp/kind "$HOME/.local/bin/kind"; export PATH="$HOME/.local/bin:$PATH"; }
+fi
+
+# kubectl
+if ! command -v kubectl >/dev/null 2>&1; then
+  echo "[INFO] Installing kubectl..."
+  _ARCH=$(dpkg --print-architecture 2>/dev/null || echo "amd64")
+  curl -fsSL -o /tmp/kubectl "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/${_ARCH}/kubectl"
+  chmod +x /tmp/kubectl
+  sudo mv /tmp/kubectl /usr/local/bin/kubectl 2>/dev/null || { mkdir -p "$HOME/.local/bin"; mv /tmp/kubectl "$HOME/.local/bin/kubectl"; export PATH="$HOME/.local/bin:$PATH"; }
+fi
+
+# Docker socket permissions (WSL2 / Codespaces)
+if [[ -S /var/run/docker.sock ]]; then
+  chmod 666 /var/run/docker.sock >/dev/null 2>&1 || sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+fi
+
+# .env file
+if [[ ! -f "$ROOT_DIR/.env" ]] && [[ -f "$ROOT_DIR/.env.example" ]]; then
+  cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
+  echo "[INFO] Created .env from template — edit it to add API keys"
+fi
+
+# Frontend dependencies
 echo "[INFO] Installing frontend dependencies (if needed)"
 (
   cd "$ROOT_DIR/webapp"
