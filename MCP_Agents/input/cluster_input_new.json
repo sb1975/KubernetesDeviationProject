@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "defaults": {
+    "cpus": 0.5,
+    "memory": "768m",
+    "pod_subnet": "10.244.0.0/16",
+    "service_subnet": "10.96.0.0/12"
+  },
+  "items": [
+    {
+      "name": "c1",
+      "release": "R4",
+      "pod_subnet": "10.10.0.0/16",
+      "service_subnet": "10.110.0.0/12",
+      "host_port": 30001
+    },
+    {
+      "name": "c2",
+      "release": "R1",
+      "pod_subnet": "10.20.0.0/16",
+      "service_subnet": "10.120.0.0/12",
+      "host_port": 30002
+    },
+    {
+      "name": "c3",
+      "release": "R1",
+      "pod_subnet": "10.30.0.0/16",
+      "service_subnet": "10.130.0.0/12",
+      "host_port": 30003,
+      "kubernetes_version": "1.23"
+    },
+    {
+      "name": "c4",
+      "release": "R1",
+      "pod_subnet": "10.40.0.0/16",
+      "service_subnet": "10.140.0.0/12",
+      "host_port": 30004
+    }
+  ]
+}

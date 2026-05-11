@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "defaults": {
+    "namespace": "default"
+  },
+  "items": [
+    {
+      "cluster": "c1",
+      "name": "nginx",
+      "release": "R4"
+    },
+    {
+      "cluster": "c1",
+      "name": "httpd",
+      "release": "R4"
+    },
+    {
+      "cluster": "c2",
+      "name": "nginx",
+      "release": "R3"
+    },
+    {
+      "cluster": "c2",
+      "name": "memcached",
+      "release": "R3"
+    },
+    {
+      "cluster": "c3",
+      "name": "nginx",
+      "release": "R2"
+    }
+  ]
+}

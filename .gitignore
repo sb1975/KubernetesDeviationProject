@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.logs/
+.run/
+__pycache__/
+*.pyc
+generated-kind-configs*/
+.venv/
+*.egg-info/
+*.log

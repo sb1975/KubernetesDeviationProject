@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Give kind inside the container access to the Docker socket on the host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Live-mount MCP agents so edits take effect without rebuild
+      - ../MCP_Agents:/app/MCP_Agents:ro
+      # Persist kubeconfig
+      - kubeconfig:/root/.kube
+    environment:
+      - KUBECONFIG=/root/.kube/config
+    restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      - VITE_PORT=3000
+    depends_on:
+      - backend
+    profiles:
+      - dev   # Only start with: docker compose --profile dev up
+
+volumes:
+  kubeconfig:

@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "releases": {
+    "R1": {
+      "name": "R1",
+      "kubernetes_version": "1.27",
+      "kind_image": "kindest/node:v1.27.11",
+      "cpus": 0.5,
+      "memory": "768m",
+      "description": "Kubernetes 1.27 - Initial baseline release",
+      "changes": []
+    },
+    "R2": {
+      "name": "R2",
+      "kubernetes_version": "1.28",
+      "kind_image": "kindest/node:v1.28.7",
+      "cpus": 0.5,
+      "memory": "768m",
+      "description": "Kubernetes 1.28 - Stable channel upgrade",
+      "changes": [
+        "Kubernetes upgraded from 1.27 to 1.28",
+        "Node image updated to kindest/node:v1.28.7"
+      ]
+    },
+    "R3": {
+      "name": "R3",
+      "kubernetes_version": "1.29",
+      "kind_image": "kindest/node:v1.29.2",
+      "cpus": 0.5,
+      "memory": "768m",
+      "description": "Kubernetes 1.29 - Latest stable release",
+      "changes": [
+        "Kubernetes upgraded from 1.28 to 1.29",
+        "Node image updated to kindest/node:v1.29.2"
+      ]
+    },
+    "R4": {
+      "name": "R4",
+      "kubernetes_version": "1.30",
+      "kind_image": "kindest/node:v1.30.0",
+      "cpus": 0.5,
+      "memory": "768m",
+      "description": "Kubernetes 1.30 - Current release",
+      "changes": [
+        "Kubernetes upgraded from 1.29 to 1.30",
+        "Node image updated to kindest/node:v1.30.0"
+      ]
+    }
+  }
+}

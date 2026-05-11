@@ -1,0 +1,121 @@
+{
+  "schema_version": "1.0",
+  "releases": {
+    "R1": [
+      {
+        "name": "nginx",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "nginx:1.24.0-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "httpd",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "httpd:2.4.57-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "memcached",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "memcached:1.6.21-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 11211
+      }
+    ],
+    "R2": [
+      {
+        "name": "nginx",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "nginx:1.25.5-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "httpd",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "httpd:2.4.58-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "memcached",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "memcached:1.6.24-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 11211
+      }
+    ],
+    "R3": [
+      {
+        "name": "nginx",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "nginx:1.26.2-alpine",
+        "replicas": 2,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "httpd",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "httpd:2.4.59-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "memcached",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "memcached:1.6.26-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 11211
+      }
+    ],
+    "R4": [
+      {
+        "name": "nginx",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "nginx:1.27.0-alpine",
+        "replicas": 2,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "httpd",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "httpd:2.4.60-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 80
+      },
+      {
+        "name": "memcached",
+        "namespace": "default",
+        "kind": "Deployment",
+        "image": "memcached:1.6.29-alpine",
+        "replicas": 1,
+        "service_type": "ClusterIP",
+        "service_port": 11211
+      }
+    ]
+  }
+}
