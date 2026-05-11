@@ -50,6 +50,11 @@ export default function BrownfieldPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cluster_name: selectedCluster, target_release: targetRelease }),
       })
+      if (!resp.ok) {
+        const t = await resp.text()
+        try { setReport(JSON.parse(t)) } catch { setReport({ error: `Server error (${resp.status}): ${t}` }) }
+        return
+      }
       setReport(await resp.json())
     } catch (e) {
       setReport({ error: e.message })
@@ -68,6 +73,11 @@ export default function BrownfieldPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from_release: fromRelease, to_release: toRelease }),
       })
+      if (!resp.ok) {
+        const t = await resp.text()
+        try { setReleaseDiff(JSON.parse(t)) } catch { setReleaseDiff({ error: `Server error (${resp.status}): ${t}` }) }
+        return
+      }
       setReleaseDiff(await resp.json())
     } catch (e) {
       setReleaseDiff({ error: e.message })

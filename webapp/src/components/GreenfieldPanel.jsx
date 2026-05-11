@@ -68,6 +68,16 @@ export default function GreenfieldPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, release: selectedRelease }),
       })
+      if (!resp.ok) {
+        const errText = await resp.text()
+        try {
+          const errJson = JSON.parse(errText)
+          setLog(`Error: ${errJson.detail || errText}`)
+        } catch {
+          setLog(`Error (${resp.status}): ${errText}`)
+        }
+        return
+      }
       const data = await resp.json()
       setResult(data)
       setLog((data.stdout || '') + (data.stderr || ''))

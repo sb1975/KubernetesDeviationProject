@@ -44,6 +44,11 @@ export default function AppBrownfieldPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cluster_name: selectedCluster, target_release: targetRelease }),
       })
+      if (!resp.ok) {
+        const t = await resp.text()
+        try { setScanResult(JSON.parse(t)) } catch { setScanResult({ error: `Server error (${resp.status}): ${t}` }) }
+        return
+      }
       setScanResult(await resp.json())
     } catch (e) {
       setScanResult({ error: e.message })
@@ -68,6 +73,11 @@ export default function AppBrownfieldPanel() {
           app_found: !!report.app_found,
         }),
       })
+      if (!resp.ok) {
+        const t = await resp.text()
+        setFixResults(prev => ({ ...prev, [appName]: { success: false, error: `Server error (${resp.status}): ${t}` } }))
+        return
+      }
       const data = await resp.json()
       setFixResults(prev => ({ ...prev, [appName]: data }))
     } catch (e) {

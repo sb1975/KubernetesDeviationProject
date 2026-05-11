@@ -156,32 +156,44 @@ def api_cluster_status() -> dict[str, Any]:
 
 @app.post("/api/greenfield/deploy")
 def api_deploy(body: DeployRequest) -> dict[str, Any]:
-    return deploy_cluster(
-        cluster_name=body.cluster_name,
-        release=body.release,
-        pod_subnet=body.pod_subnet,
-        service_subnet=body.service_subnet,
-        host_port=body.host_port,
-        recreate=body.recreate,
-        verbose=body.verbose,
-    )
+    try:
+        return deploy_cluster(
+            cluster_name=body.cluster_name,
+            release=body.release,
+            pod_subnet=body.pod_subnet,
+            service_subnet=body.service_subnet,
+            host_port=body.host_port,
+            recreate=body.recreate,
+            verbose=body.verbose,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.delete("/api/greenfield/cluster/{cluster_name}")
 def api_delete_cluster(cluster_name: str) -> dict[str, Any]:
-    return delete_cluster(cluster_name)
+    try:
+        return delete_cluster(cluster_name)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ─── Brownfield — deviation ────────────────────────────────────────────────────
 
 @app.post("/api/brownfield/analyze")
 def api_analyze(body: DeviationRequest) -> dict[str, Any]:
-    return analyze_cluster_deviation(body.cluster_name, body.target_release)
+    try:
+        return analyze_cluster_deviation(body.cluster_name, body.target_release)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/api/brownfield/scan/{target_release}")
 def api_scan(target_release: str) -> dict[str, Any]:
-    return scan_all_clusters(target_release)
+    try:
+        return scan_all_clusters(target_release)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ─── Chat — LLM proxy ─────────────────────────────────────────────────────────
@@ -269,9 +281,17 @@ def api_chat_providers() -> dict[str, Any]:
     else:
         providers.append({"value": "gemini", "label": "Google Gemini", "ready": False})
 
-    # Local LLM (Ollama) — always shown, ready if Ollama is reachable
+    # Local LLM (Ollama) — shown only if reachable
     ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-    providers.append({"value": "local", "label": "Local LLM (Gemma/Ollama)", "ready": True, "url": ollama_url})
+    ollama_ready = False
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{ollama_url}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=2):
+            ollama_ready = True
+    except Exception:
+        pass
+    providers.append({"value": "local", "label": "Local LLM (Gemma/Ollama)", "ready": ollama_ready, "url": ollama_url})
 
     return {"providers": providers}
 
@@ -362,60 +382,81 @@ async def api_chat(body: ChatRequest) -> dict[str, Any]:
 
 @app.post("/api/apps/deploy")
 def api_deploy_app(body: AppDeployRequest) -> dict[str, Any]:
-    return deploy_app(body.cluster_name, body.app_spec, body.verbose)
+    try:
+        return deploy_app(body.cluster_name, body.app_spec, body.verbose)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/apps/upgrade")
 def api_upgrade_app(body: AppUpgradeRequest) -> dict[str, Any]:
-    return upgrade_app(
-        body.cluster_name,
-        body.app_name,
-        body.namespace,
-        body.new_image,
-        body.verbose,
-    )
+    try:
+        return upgrade_app(
+            body.cluster_name,
+            body.app_name,
+            body.namespace,
+            body.new_image,
+            body.verbose,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/apps/scale")
 def api_scale_app(body: AppScaleRequest) -> dict[str, Any]:
-    return scale_app(
-        body.cluster_name,
-        body.app_name,
-        body.namespace,
-        body.replicas,
-        body.verbose,
-    )
+    try:
+        return scale_app(
+            body.cluster_name,
+            body.app_name,
+            body.namespace,
+            body.replicas,
+            body.verbose,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/apps/deviation")
 def api_app_deviation(body: AppDeviationRequest) -> dict[str, Any]:
-    return analyze_app_deviation(
-        body.cluster_name,
-        body.app_name,
-        body.target_release,
-    )
+    try:
+        return analyze_app_deviation(
+            body.cluster_name,
+            body.app_name,
+            body.target_release,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/apps/scan")
 def api_scan_apps(body: AppScanRequest) -> dict[str, Any]:
-    return scan_cluster_apps(body.cluster_name, body.target_release)
+    try:
+        return scan_cluster_apps(body.cluster_name, body.target_release)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/api/apps/list/{cluster_name}")
 def api_list_apps(cluster_name: str, namespace: str = "default") -> dict[str, Any]:
-    return list_apps_in_cluster(cluster_name, namespace)
+    try:
+        return list_apps_in_cluster(cluster_name, namespace)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.post("/api/apps/fix")
 def api_fix_app(body: AppFixRequest) -> dict[str, Any]:
-    return fix_app(
-        body.cluster_name,
-        body.app_name,
-        body.namespace,
-        body.expected_image,
-        body.expected_replicas,
-        body.app_found,
-    )
+    try:
+        return fix_app(
+            body.cluster_name,
+            body.app_name,
+            body.namespace,
+            body.expected_image,
+            body.expected_replicas,
+            body.app_found,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ─── Serve built React static files if present ────────────────────────────────

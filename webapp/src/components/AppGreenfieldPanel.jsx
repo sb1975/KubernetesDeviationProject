@@ -77,6 +77,11 @@ export default function AppGreenfieldPanel() {
             },
           }),
         })
+        if (!resp.ok) {
+          const t = await resp.text()
+          results.push({ app: app.name, success: false, error: `Server error (${resp.status}): ${t}` })
+          continue
+        }
         const data = await resp.json()
         results.push({ app: app.name, ...data })
       } catch (e) {
