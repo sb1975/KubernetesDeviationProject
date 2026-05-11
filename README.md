@@ -83,6 +83,66 @@ python3 Artifact_mcp.py deploy \
 
 ---
 
+## Running on GitHub Codespaces
+
+This project includes a full dev container configuration for one-click setup on GitHub Codespaces.
+
+### Quick Start (Codespaces)
+
+1. **Open in Codespaces** — From the GitHub repo page, click **Code → Codespaces → Create codespace on master**
+
+2. **Wait for setup** — The dev container automatically:
+   - Installs Docker-in-Docker, Node.js 20, Python 3.12, kubectl
+   - Installs `kind` for local Kubernetes clusters
+   - Creates the Python virtual environment with all dependencies
+   - Installs frontend npm packages
+   - Creates `.env` from the template
+
+3. **Configure API keys** — Edit `.env` and add at least one LLM provider key:
+   ```bash
+   # Edit the .env file (created automatically from .env.example)
+   code .env
+   ```
+   Add your OpenAI or Gemini API key. Ollama is **not recommended** in Codespaces (CPU-only, very slow).
+
+4. **Start the dashboard**:
+   ```bash
+   ./start.sh
+   ```
+
+5. **Open the UI** — Codespaces auto-forwards port 3000. Click the notification or go to the **Ports** tab and open port 3000 in browser.
+
+6. **Deploy clusters** — Use the Greenfield tab in the UI, or CLI:
+   ```bash
+   cd MCP_Agents
+   ~/.venvs/artifact-mcp/bin/python3 Artifact_mcp.py deploy \
+     --input cluster_input.json \
+     --output-dir ./generated-kind-configs \
+     --recreate --verbose
+   ```
+
+### Codespaces Limitations
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Docker / kind clusters | ✅ Works | Docker-in-Docker feature enabled |
+| Frontend + Backend | ✅ Works | Ports auto-forwarded |
+| OpenAI / Gemini chat | ✅ Works | Set API keys in `.env` |
+| Ollama (local LLM) | ⚠️ Slow | No GPU in standard Codespaces; ~60s per response on CPU |
+| Port forwarding | ✅ Auto | Ports 3000, 8000, 8765-8767 configured |
+
+### Codespaces Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| Setup script didn't run | Run manually: `bash .devcontainer/setup.sh` |
+| Docker not working | Rebuild container: Command Palette → **Codespaces: Rebuild Container** |
+| kind clusters not reachable | Wait 10s after `start.sh`, then retry — API server needs time in DinD |
+| `.env` not found | `cp .env.example .env` |
+| Services won't start | `rm -f .run/*.pid && ./start.sh` |
+
+---
+
 ## Project Structure
 
 This project contains the Artifact MCP server used to generate kind cluster config YAML files and (optionally) deploy clusters from those generated artifacts.
@@ -212,7 +272,7 @@ The web UI is now available and wired to Deployment/Deviation logic.
 
 ### Start All Services (All-in-One)
 
-From project root (`/home/esudbat/KubernetesDeviationProject`):
+From the project root:
 
 ```bash
 chmod +x ./start.sh
@@ -357,12 +417,12 @@ API keys are **never exposed on the web UI**. They are loaded server-side from a
 `start.sh` writes logs here:
 
 ```bash
-ls -lah /home/esudbat/KubernetesDeviationProject/.logs
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/backend_api.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/frontend_web.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/artifact_mcp.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/deployment_mcp.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/deviation_mcp.log
+ls -lah .logs/
+tail -n 80 .logs/backend_api.log
+tail -n 80 .logs/frontend_web.log
+tail -n 80 .logs/artifact_mcp.log
+tail -n 80 .logs/deployment_mcp.log
+tail -n 80 .logs/deviation_mcp.log
 ```
 
 ### Common Web Troubleshooting
@@ -378,7 +438,7 @@ Fix: ensure `webapp/backend/main.py` imports `compare_releases` from `Deviation_
 If frontend appears stuck during install, verify completion with:
 
 ```bash
-cd /home/esudbat/KubernetesDeviationProject/webapp
+cd webapp
 ls node_modules | wc -l
 npm list --depth=0
 ```
@@ -506,7 +566,6 @@ After a laptop reboot (or WSL restart), several services need to be recovered. U
 ### One-Command Recovery
 
 ```bash
-cd /home/esudbat/KubernetesDeviationProject
 ./recover.sh
 ```
 

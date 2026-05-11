@@ -1,0 +1,27 @@
+{
+  "name": "Kubernetes Deviation Dashboard",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": { "kubectl": "latest", "helm": "none", "minikube": "none" }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "forwardPorts": [3000, 8000, 8765, 8766, 8767],
+  "portsAttributes": {
+    "3000": { "label": "Frontend (React)", "onAutoForward": "openBrowser" },
+    "8000": { "label": "Backend (FastAPI)" },
+    "8765": { "label": "Artifact MCP" },
+    "8766": { "label": "Deployment MCP" },
+    "8767": { "label": "Deviation MCP" }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}

@@ -127,7 +127,7 @@ The web UI is now available and wired to Deployment/Deviation logic.
 
 ### Start All Services (All-in-One)
 
-From project root (`/home/esudbat/KubernetesDeviationProject`):
+From the project root:
 
 ```bash
 chmod +x ./start.sh
@@ -272,12 +272,12 @@ API keys are **never exposed on the web UI**. They are loaded server-side from a
 `start.sh` writes logs here:
 
 ```bash
-ls -lah /home/esudbat/KubernetesDeviationProject/.logs
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/backend_api.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/frontend_web.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/artifact_mcp.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/deployment_mcp.log
-tail -n 80 /home/esudbat/KubernetesDeviationProject/.logs/deviation_mcp.log
+ls -lah .logs/
+tail -n 80 .logs/backend_api.log
+tail -n 80 .logs/frontend_web.log
+tail -n 80 .logs/artifact_mcp.log
+tail -n 80 .logs/deployment_mcp.log
+tail -n 80 .logs/deviation_mcp.log
 ```
 
 ### Common Web Troubleshooting
@@ -293,7 +293,7 @@ Fix: ensure `webapp/backend/main.py` imports `compare_releases` from `Deviation_
 If frontend appears stuck during install, verify completion with:
 
 ```bash
-cd /home/esudbat/KubernetesDeviationProject/webapp
+cd webapp
 ls node_modules | wc -l
 npm list --depth=0
 ```
