@@ -7,6 +7,36 @@ const DEFAULT_SUBNETS = {
   c4: { pod: '10.40.0.0/16', svc: '10.140.0.0/12', port: 30004 },
 }
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+
+function deriveClusterNetwork(name) {
+  const key = name.trim().toLowerCase()
+  if (!key) {
+    return { pod: '10.244.0.0/16', svc: '10.96.0.0/12', port: 30000 }
+  }
+
+  if (DEFAULT_SUBNETS[key]) {
+    return DEFAULT_SUBNETS[key]
+  }
+
+  const digitGroups = key.match(/\d+/g)
+  let idx = digitGroups?.length ? parseInt(digitGroups[digitGroups.length - 1], 10) : NaN
+
+  if (!Number.isFinite(idx) || idx <= 0) {
+    idx = [...key].reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 99 + 1
+  }
+
+  const podOctet = ((idx * 10 - 1) % 200) + 1
+  const svcOctet = 100 + ((idx * 10 - 1) % 100)
+  const hostPort = 30000 + idx
+
+  return {
+    pod: `10.${podOctet}.0.0/16`,
+    svc: `10.${svcOctet}.0.0/12`,
+    port: hostPort,
+  }
+}
+
 export default function GreenfieldPanel() {
   const [releases, setReleases] = useState({})
   const [releaseOrder, setReleaseOrder] = useState([])
@@ -41,19 +71,32 @@ export default function GreenfieldPanel() {
 
   const refreshClusters = () => {
     setLoadingClusters(true)
-    fetch('/api/clusters')
+    fetch(`${API_BASE}/api/clusters`)
       .then(r => r.json())
       .then(d => { setClusters(d.clusters || []); setLoadingClusters(false) })
       .catch(() => setLoadingClusters(false))
   }
 
-  const onClusterNameChange = name => {
-    const preset = DEFAULT_SUBNETS[name]
-    if (preset) {
-      setForm(f => ({ ...f, cluster_name: name, pod_subnet: preset.pod, service_subnet: preset.svc, host_port: preset.port }))
-    } else {
-      setForm(f => ({ ...f, cluster_name: name }))
+  const waitForCluster = async (name, attempts = 12, delayMs = 5000) => {
+    for (let i = 0; i < attempts; i += 1) {
+      try {
+        const r = await fetch(`${API_BASE}/api/clusters`)
+        if (r.ok) {
+          const d = await r.json()
+          const found = (d.clusters || []).some(c => c.name === name)
+          if (found) return true
+        }
+      } catch {
+        // keep retrying
+      }
+      await new Promise(resolve => setTimeout(resolve, delayMs))
     }
+    return false
+  }
+
+  const onClusterNameChange = name => {
+    const preset = deriveClusterNetwork(name)
+    setForm(f => ({ ...f, cluster_name: name, pod_subnet: preset.pod, service_subnet: preset.svc, host_port: preset.port }))
   }
 
   const deploy = async () => {
@@ -63,7 +106,7 @@ export default function GreenfieldPanel() {
     setResult(null)
 
     try {
-      const resp = await fetch('/api/greenfield/deploy', {
+      const resp = await fetch(`${API_BASE}/api/greenfield/deploy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, release: selectedRelease }),
@@ -83,7 +126,19 @@ export default function GreenfieldPanel() {
       setLog((data.stdout || '') + (data.stderr || ''))
       refreshClusters()
     } catch (e) {
-      setLog(`Error: ${e.message}`)
+      const msg = String(e?.message || 'Network request failed')
+      if (msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('failed to fetch')) {
+        const created = await waitForCluster(form.cluster_name)
+        if (created) {
+          setResult({ success: true, exit_code: 0, stdout: 'Cluster created (verified after transient network disconnect).' })
+          setLog('Cluster deployment completed. Connection dropped while waiting, but cluster is now running.')
+          refreshClusters()
+        } else {
+          setLog('Error: Lost connection while waiting for deployment response. Backend may still be processing; click Refresh in Running Clusters after 30-60s.')
+        }
+      } else {
+        setLog(`Error: ${msg}`)
+      }
     } finally {
       setDeploying(false)
     }
@@ -91,7 +146,7 @@ export default function GreenfieldPanel() {
 
   const deleteCluster = async name => {
     if (!confirm(`Delete cluster '${name}'?`)) return
-    await fetch(`/api/greenfield/cluster/${name}`, { method: 'DELETE' })
+    await fetch(`${API_BASE}/api/greenfield/cluster/${name}`, { method: 'DELETE' })
     refreshClusters()
   }
 

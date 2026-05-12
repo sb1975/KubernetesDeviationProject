@@ -29,7 +29,7 @@ if _ENV_FILE.exists():
 MCP_AGENTS = Path(__file__).parent.parent.parent / "MCP_Agents"
 sys.path.insert(0, str(MCP_AGENTS))
 
-from releases import RELEASES, RELEASE_ORDER  # noqa: E402
+from releases import RELEASES, RELEASE_ORDER, update_release_definition  # noqa: E402
 from Deployment_mcp import (  # noqa: E402
     get_releases,
     get_cluster_status,
@@ -78,6 +78,26 @@ class DeviationRequest(BaseModel):
 class ReleaseDiffRequest(BaseModel):
     from_release: str
     to_release: str
+
+
+class ReleaseAppSpec(BaseModel):
+    name: str
+    namespace: str = "default"
+    kind: str = "Deployment"
+    image: str
+    replicas: int
+    service_type: str = "ClusterIP"
+    service_port: int
+
+
+class ReleaseUpdateRequest(BaseModel):
+    kubernetes_version: str
+    kind_image: str
+    cpus: float
+    memory: str
+    description: str
+    changes: list[str] = []
+    applications: list[ReleaseAppSpec] | None = None
 
 
 class ChatMessage(BaseModel):
@@ -143,6 +163,29 @@ def api_get_releases() -> dict[str, Any]:
 @app.post("/api/releases/diff")
 def api_release_diff(body: ReleaseDiffRequest) -> dict[str, Any]:
     return compare_releases(body.from_release, body.to_release)
+
+
+@app.put("/api/releases/{release_name}")
+def api_update_release(release_name: str, body: ReleaseUpdateRequest) -> dict[str, Any]:
+    try:
+        updated = update_release_definition(
+            release_name,
+            cluster_fields={
+                "name": release_name,
+                "kubernetes_version": body.kubernetes_version,
+                "kind_image": body.kind_image,
+                "cpus": body.cpus,
+                "memory": body.memory,
+                "description": body.description,
+                "changes": body.changes,
+            },
+            applications=[a.model_dump() for a in body.applications] if body.applications is not None else None,
+        )
+        return {"release": release_name, "updated": updated}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 # ─── Clusters ─────────────────────────────────────────────────────────────────
@@ -211,7 +254,7 @@ across 4 release baselines (R1–R4), each pinned to a specific Kubernetes versi
 - **Frontend**: React 18 + Vite on port 3000
 - **Backend**: FastAPI on port 8000 (proxied from frontend via /api/*)
 - **MCP Agents**: Artifact (8765), Deployment (8766), Deviation (8767) — SSE transport
-- **Local LLM**: Ollama + Gemma on port 11434
+- **Local LLM**: Ollama + TinyLlama on port 11434
 - **Config files**: `input/` (deployment intent) and `release/` (baselines) directories under MCP_Agents/
 
 ## Two Main Tabs
@@ -291,7 +334,7 @@ def api_chat_providers() -> dict[str, Any]:
             ollama_ready = True
     except Exception:
         pass
-    providers.append({"value": "local", "label": "Local LLM (Gemma/Ollama)", "ready": ollama_ready, "url": ollama_url})
+    providers.append({"value": "local", "label": "Local LLM (TinyLlama/Ollama)", "ready": ollama_ready, "url": ollama_url})
 
     return {"providers": providers}
 
@@ -353,7 +396,7 @@ async def api_chat(body: ChatRequest) -> dict[str, Any]:
 
     elif body.provider == "local":
         ollama_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-        model = body.model or "gemma3:1b"
+        model = body.model or os.environ.get("OLLAMA_MODEL", "tinyllama:latest")
         payload = {
             "model": model,
             "messages": [{"role": m.role, "content": m.content} for m in all_messages],

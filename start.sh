@@ -5,8 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_DIR="$ROOT_DIR/.run"
 LOG_DIR="$ROOT_DIR/.logs"
 
-PYTHON_BIN="${PYTHON_BIN:-$HOME/.venvs/artifact-mcp/bin/python3}"
-UVICORN_BIN="${UVICORN_BIN:-$HOME/.venvs/artifact-mcp/bin/uvicorn}"
+VENV_DIR="${VENV_DIR:-$HOME/.venvs/artifact-mcp}"
+PYTHON_BIN="${PYTHON_BIN:-$VENV_DIR/bin/python3}"
+UVICORN_BIN="${UVICORN_BIN:-$VENV_DIR/bin/uvicorn}"
 
 mkdir -p "$RUN_DIR" "$LOG_DIR"
 
@@ -23,16 +24,6 @@ need_cmd npm
 need_cmd kind
 need_cmd kubectl
 need_cmd docker
-
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "[ERROR] Python not found at $PYTHON_BIN"
-  exit 1
-fi
-
-if [[ ! -x "$UVICORN_BIN" ]]; then
-  echo "[ERROR] Uvicorn not found at $UVICORN_BIN"
-  exit 1
-fi
 
 is_port_listening() {
   local port="$1"
@@ -75,8 +66,13 @@ echo "[INFO] Logs: $LOG_DIR"
 
 # Python venv
 if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "[INFO] Python venv not found — creating at $(dirname "$(dirname "$PYTHON_BIN")")"
-  python3 -m venv "$(dirname "$(dirname "$PYTHON_BIN")")"
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[ERROR] Python not found at $PYTHON_BIN and system python3 is unavailable"
+    exit 1
+  fi
+  echo "[INFO] Python venv not found — creating at $VENV_DIR"
+  python3 -m venv "$VENV_DIR"
+  PYTHON_BIN="$VENV_DIR/bin/python3"
 fi
 
 # Python packages
@@ -86,6 +82,11 @@ if ! "$PYTHON_BIN" -c "import mcp, fastapi, uvicorn, httpx" 2>/dev/null; then
   "$(dirname "$PYTHON_BIN")/pip" install --quiet mcp fastapi uvicorn httpx python-dotenv
 fi
 UVICORN_BIN="$(dirname "$PYTHON_BIN")/uvicorn"
+
+if [[ ! -x "$UVICORN_BIN" ]]; then
+  echo "[ERROR] Uvicorn not found at $UVICORN_BIN"
+  exit 1
+fi
 
 # kind
 if ! command -v kind >/dev/null 2>&1; then

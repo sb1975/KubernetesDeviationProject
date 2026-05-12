@@ -217,3 +217,120 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .release-pill.selected { border-color: #58a6ff; background: #1c3050; color: #58a6ff; }
 .release-pill:not(.selected) { background: #21262d; color: #8b949e; }
 .release-pill:not(.selected):hover { border-color: #30363d; color: #c9d1d9; }
+
+/* Release catalog */
+.releases-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.release-card {
+  background: linear-gradient(180deg, #161b22 0%, #131920 100%);
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.release-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.release-version {
+  font-size: 11px;
+  color: #8b949e;
+}
+
+.release-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #c9d1d9;
+  margin-bottom: 8px;
+}
+
+.release-meta {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 12px;
+  color: #8b949e;
+  line-height: 1.7;
+}
+
+.release-section-title {
+  margin-top: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #58a6ff;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
+.release-list {
+  margin-left: 16px;
+  color: #8b949e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.release-empty {
+  font-size: 12px;
+  color: #8b949e;
+}
+
+.release-apps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.release-app-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
+
+.release-app-name {
+  font-size: 12px;
+  color: #c9d1d9;
+  font-weight: 600;
+}
+
+.release-app-ns {
+  font-size: 11px;
+  color: #8b949e;
+  margin-top: 2px;
+}
+
+.release-app-right {
+  text-align: right;
+  font-size: 11px;
+  color: #8b949e;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.release-edit-box {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #0d1117;
+}
+
+.release-edit-app-row {
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #161b22;
+}
