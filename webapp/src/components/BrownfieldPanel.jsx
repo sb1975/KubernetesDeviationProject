@@ -157,6 +157,53 @@ export default function BrownfieldPanel() {
                 </select>
               </div>
             </div>
+
+            {/* Selected cluster info */}
+            {selectedCluster && (() => {
+              const c = clusters.find(cl => cl.name === selectedCluster)
+              if (!c) return null
+              const rel = c.detected_release ? releases[c.detected_release] : null
+              return (
+                <div style={{ background: '#21262d', borderRadius: 6, padding: '10px 14px', marginBottom: 12, marginTop: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#58a6ff', marginBottom: 6 }}>
+                    📊 Current Cluster State
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, fontSize: 12 }}>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Release:</span>{' '}
+                      <span className="badge badge-info">{c.detected_release || 'Unknown'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>K8s Version:</span>{' '}
+                      <strong style={{ color: '#c9d1d9' }}>v{c.version}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Status:</span>{' '}
+                      <span style={{ color: c.ready ? '#3fb950' : '#f85149' }}>{c.ready ? '● Ready' : '● Not Ready'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Nodes:</span>{' '}
+                      <strong style={{ color: '#c9d1d9' }}>{c.node_count || 1}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Runtime:</span>{' '}
+                      <span style={{ color: '#c9d1d9' }}>{c.container_runtime || '—'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>OS Image:</span>{' '}
+                      <span style={{ color: '#c9d1d9' }}>{c.os_image || '—'}</span>
+                    </div>
+                    {rel && (
+                      <div>
+                        <span style={{ color: '#8b949e' }}>Expected (target):</span>{' '}
+                        <span style={{ color: '#d29922' }}>k8s {releases[targetRelease]?.kubernetes_version}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+
             <button
               className="btn-blue"
               disabled={analyzing || !selectedCluster || !targetRelease}

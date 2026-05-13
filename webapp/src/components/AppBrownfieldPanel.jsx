@@ -144,6 +144,54 @@ export default function AppBrownfieldPanel() {
             </select>
           </div>
         </div>
+
+        {/* Selected cluster + app info */}
+        {selectedCluster && (() => {
+          const c = clusters.find(cl => cl.name === selectedCluster)
+          if (!c) return null
+          const targetRel = releases[targetRelease]
+          const apps = targetRel?.applications || []
+          return (
+            <div style={{ background: '#21262d', borderRadius: 6, padding: '10px 14px', marginBottom: 12, marginTop: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#58a6ff', marginBottom: 6 }}>
+                📊 Current State
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, fontSize: 12, marginBottom: 8 }}>
+                <div>
+                  <span style={{ color: '#8b949e' }}>Cluster Release:</span>{' '}
+                  <span className="badge badge-info">{c.detected_release || 'Unknown'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e' }}>K8s Version:</span>{' '}
+                  <strong style={{ color: '#c9d1d9' }}>v{c.version}</strong>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e' }}>Status:</span>{' '}
+                  <span style={{ color: c.ready ? '#3fb950' : '#f85149' }}>{c.ready ? '● Ready' : '● Not Ready'}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#8b949e' }}>Runtime:</span>{' '}
+                  <span style={{ color: '#c9d1d9' }}>{c.container_runtime || '—'}</span>
+                </div>
+              </div>
+              {apps.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4 }}>
+                    Expected apps in {targetRelease}:
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {apps.map(app => (
+                      <span key={app.name} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#c9d1d9' }}>
+                        {app.name} <span style={{ color: '#8b949e' }}>({app.image})</span>
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })()}
+
         <button
           className="btn-blue"
           disabled={scanning || !selectedCluster || !targetRelease}

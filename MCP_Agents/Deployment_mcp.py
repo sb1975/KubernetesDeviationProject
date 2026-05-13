@@ -69,6 +69,20 @@ def get_cluster_status() -> dict[str, Any]:
 
         node_r = _run(["kubectl", "--context", ctx, "get", "nodes", "--no-headers"])
         ready = node_r.returncode == 0 and "Ready" in node_r.stdout
+        node_count = len([l for l in node_r.stdout.strip().splitlines() if l.strip()]) if node_r.returncode == 0 else 0
+
+        # Container runtime and OS image
+        runtime_r = _run([
+            "kubectl", "--context", ctx, "get", "nodes",
+            "-o", "jsonpath={.items[0].status.nodeInfo.containerRuntimeVersion}",
+        ])
+        container_runtime = runtime_r.stdout.strip() if runtime_r.returncode == 0 else "unknown"
+
+        os_r = _run([
+            "kubectl", "--context", ctx, "get", "nodes",
+            "-o", "jsonpath={.items[0].status.nodeInfo.osImage}",
+        ])
+        os_image = os_r.stdout.strip() if os_r.returncode == 0 else "unknown"
 
         # Try to detect which release this cluster corresponds to
         detected_release = None
@@ -82,6 +96,9 @@ def get_cluster_status() -> dict[str, Any]:
             "version": version,
             "ready": ready,
             "detected_release": detected_release,
+            "node_count": node_count,
+            "container_runtime": container_runtime,
+            "os_image": os_image,
         })
 
     return {"clusters": statuses}
