@@ -169,10 +169,10 @@ def execute_remediation(report_id: str) -> dict[str, Any]:
         step_result = {"action": action, "params": params, "description": step.get("description", "")}
 
         try:
-            if action == "rebuild_cluster":
+            if action in ("rebuild_cluster", "deploy_cluster"):
                 # Delete and redeploy
-                cluster_name = params["cluster_name"]
-                release = params["release"]
+                cluster_name = params.get("cluster_name") or params.get("cluster")
+                release = params.get("release") or params.get("target_release")
                 delete_cluster(cluster_name)
                 out = deploy_cluster(
                     cluster_name=cluster_name,
@@ -183,18 +183,18 @@ def execute_remediation(report_id: str) -> dict[str, Any]:
                 step_result["outcome"] = out
                 step_result["success"] = out.get("success", False)
 
-            elif action == "upgrade_app":
+            elif action in ("upgrade_app", "update_image", "set_image"):
                 out = upgrade_app(
-                    params["cluster_name"],
-                    params["app_name"],
+                    params.get("cluster_name") or params.get("cluster"),
+                    params.get("app_name") or params.get("name"),
                     params.get("namespace", "default"),
-                    params["new_image"],
+                    params.get("new_image") or params.get("image"),
                     verbose=True,
                 )
                 step_result["outcome"] = out
                 step_result["success"] = out.get("success", False)
 
-            elif action == "scale_app":
+            elif action in ("scale_app", "scale"):
                 out = scale_app(
                     params["cluster_name"],
                     params["app_name"],
@@ -217,12 +217,12 @@ def execute_remediation(report_id: str) -> dict[str, Any]:
                 step_result["outcome"] = out
                 step_result["success"] = out.get("success", False)
 
-            elif action == "update_resources":
+            elif action in ("update_resources", "docker_update", "update_cpu", "update_memory"):
                 # Docker update for CPU/memory
                 import subprocess
-                cluster_name = params["cluster_name"]
-                field = params["field"]
-                value = params["value"]
+                cluster_name = params.get("cluster_name") or params.get("cluster")
+                field = params.get("field") or ("cpus" if "cpu" in action else "memory")
+                value = params.get("value") or params.get("cpus") or params.get("memory")
                 if field == "cpus":
                     cmd = ["docker", "update", f"--cpus={value}", f"{cluster_name}-control-plane"]
                 else:
