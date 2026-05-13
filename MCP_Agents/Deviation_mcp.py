@@ -13,6 +13,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 from releases import RELEASES, RELEASE_ORDER, get_release, releases_between, version_tuple
+from llm_helper import call_llm
+from report_store import create_report
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -71,6 +73,66 @@ def _detect_release(version: str) -> str | None:
         if version.startswith(rel["kubernetes_version"]):
             return rname
     return None
+
+
+# ─── LLM enrichment ───────────────────────────────────────────────────────────
+
+_LLM_SYSTEM = (
+    "You are a Kubernetes operations expert. Given a deviation report between "
+    "a running cluster (or application) and its target release baseline, provide: "
+    "1) A concise risk assessment (1-2 sentences), "
+    "2) A recommended action priority (immediate/scheduled/informational), "
+    "3) Any additional context about the impact of the deviations. "
+    "Reply in JSON with keys: risk_assessment, priority, impact_notes."
+)
+
+
+def _enrich_with_llm(report: dict[str, Any]) -> dict[str, Any]:
+    """Add LLM-generated risk assessment to a deviation report."""
+    if not report.get("deviations"):
+        report["llm_analysis"] = {
+            "risk_assessment": "No deviations detected — cluster is compliant.",
+            "priority": "informational",
+            "impact_notes": "No action required.",
+        }
+        return report
+
+    prompt = (
+        f"Cluster: {report.get('cluster')}\n"
+        f"Current version: {report.get('current_version')}\n"
+        f"Target release: {report.get('target_release')} (k8s {report.get('target_version')})\n"
+        f"Deviations:\n{json.dumps(report.get('deviations', []), indent=2)}\n"
+        f"Provide risk assessment."
+    )
+
+    llm_response = call_llm(prompt, system=_LLM_SYSTEM, timeout=15.0)
+    if llm_response:
+        try:
+            # Try to parse JSON from the response
+            # Handle markdown code blocks
+            cleaned = llm_response.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
+                cleaned = cleaned.rsplit("```", 1)[0]
+            analysis = json.loads(cleaned)
+            report["llm_analysis"] = {
+                "risk_assessment": analysis.get("risk_assessment", ""),
+                "priority": analysis.get("priority", "scheduled"),
+                "impact_notes": analysis.get("impact_notes", ""),
+            }
+        except (json.JSONDecodeError, KeyError):
+            report["llm_analysis"] = {
+                "risk_assessment": llm_response[:500],
+                "priority": "scheduled",
+                "impact_notes": "",
+            }
+    else:
+        report["llm_analysis"] = {
+            "risk_assessment": "LLM unavailable — manual review recommended.",
+            "priority": "scheduled",
+            "impact_notes": "Configure GEMINI_API_KEY or OPENAI_API_KEY in .env for AI analysis.",
+        }
+    return report
 
 
 # ─── Deviation analysis ───────────────────────────────────────────────────────
@@ -177,7 +239,7 @@ def analyze_cluster_deviation(
         except ValueError:
             pass  # current_release may be after target_release (downgrade)
 
-    return {
+    result = {
         "cluster": cluster_name,
         "current_release": current_release,
         "current_version": running_version,
@@ -194,6 +256,16 @@ def analyze_cluster_deviation(
         ),
         "generated_at": datetime.datetime.now().isoformat(),
     }
+
+    # Enrich with LLM analysis
+    result = _enrich_with_llm(result)
+
+    # Persist report for approval workflow
+    stored = create_report("cluster", result)
+    result["report_id"] = stored["id"]
+    result["approval_status"] = stored["status"]
+
+    return result
 
 
 def compare_releases(from_release: str, to_release: str) -> dict[str, Any]:
@@ -387,7 +459,7 @@ def analyze_app_deviation(
             if detected_release:
                 break
 
-    return {
+    result = {
         "cluster": cluster_name,
         "app_name": app_name,
         "namespace": namespace,
@@ -406,6 +478,15 @@ def analyze_app_deviation(
             else f"App '{app_name}' has {len(deviations)} deviation(s)"
         ),
     }
+
+    # Enrich with LLM analysis and store report
+    if deviations:
+        result = _enrich_with_llm(result)
+        stored = create_report("app", result)
+        result["report_id"] = stored["id"]
+        result["approval_status"] = stored["status"]
+
+    return result
 
 
 def _is_major_version_diff(current_image: str, expected_image: str) -> bool:

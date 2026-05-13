@@ -9,3 +9,4 @@ generated-kind-configs*/
 *.egg-info/
 *.log
 .env
+MCP_Agents/reports/
