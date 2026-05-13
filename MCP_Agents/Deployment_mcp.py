@@ -28,6 +28,8 @@ def _log(msg: str) -> None:
 def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
+
+def _run_live(cmd: list[str], prefix: str) -> subprocess.CompletedProcess[str]:
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
     )

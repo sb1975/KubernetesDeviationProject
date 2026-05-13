@@ -15,8 +15,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_DIR="$ROOT_DIR/.run"
 LOG_DIR="$ROOT_DIR/.logs"
 
-PYTHON_BIN="${PYTHON_BIN:-$HOME/.venvs/artifact-mcp/bin/python3}"
-UVICORN_BIN="${UVICORN_BIN:-$HOME/.venvs/artifact-mcp/bin/uvicorn}"
+VENV_DIR="${VENV_DIR:-$HOME/.venvs/artifact-mcp}"
+PYTHON_BIN="${PYTHON_BIN:-$VENV_DIR/bin/python3}"
+UVICORN_BIN="${UVICORN_BIN:-$VENV_DIR/bin/uvicorn}"
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -38,8 +39,13 @@ ensure_deps() {
 
   # 1. Python venv
   if [[ ! -x "$PYTHON_BIN" ]]; then
-    warn "Python venv not found at $PYTHON_BIN — creating it"
-    python3 -m venv "$(dirname "$(dirname "$PYTHON_BIN")")"
+    if ! command -v python3 >/dev/null 2>&1; then
+      fail "Python not found at $PYTHON_BIN and system python3 is unavailable"
+      exit 1
+    fi
+    warn "Python venv not found at $PYTHON_BIN — creating it at $VENV_DIR"
+    python3 -m venv "$VENV_DIR"
+    PYTHON_BIN="$VENV_DIR/bin/python3"
     ok "Created Python venv"
     need_fix=1
   fi

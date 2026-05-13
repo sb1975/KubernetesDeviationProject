@@ -217,6 +217,60 @@ def get_release(name: str) -> dict | None:
     return RELEASES.get(name)
 
 
+def update_release_definition(
+    name: str,
+    cluster_fields: dict[str, Any],
+    applications: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Update a release definition and persist it to release JSON files.
+
+    `cluster_fields` updates cluster-level release metadata.
+    If `applications` is provided, application baseline for the release is replaced.
+    """
+    if name not in RELEASE_ORDER:
+        raise ValueError(f"Unknown release '{name}'. Valid: {RELEASE_ORDER}")
+
+    cluster_payload = {
+        "schema_version": "1.0",
+        "releases": {r: dict(RELEASES[r]) for r in RELEASE_ORDER if r in RELEASES},
+    }
+    app_payload = {
+        "schema_version": "1.0",
+        "releases": {r: [dict(a) for a in _APP_RELEASE_MAP.get(r, [])] for r in RELEASE_ORDER},
+    }
+
+    # Keep cluster catalog clean: applications are stored in a separate file.
+    for r in RELEASE_ORDER:
+        cluster_payload["releases"][r].pop("applications", None)
+
+    cluster_payload["releases"][name].update(cluster_fields)
+    if applications is not None:
+        app_payload["releases"][name] = [dict(a) for a in applications]
+
+    validated_clusters = _validate_cluster_release_map(cluster_payload)
+    validated_apps = _validate_app_release_map(app_payload)
+
+    CLUSTER_RELEASE_FILE.write_text(
+        json.dumps(cluster_payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    APP_RELEASE_FILE.write_text(
+        json.dumps(app_payload, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    RELEASES.clear()
+    RELEASES.update(validated_clusters)
+
+    _APP_RELEASE_MAP.clear()
+    _APP_RELEASE_MAP.update(validated_apps)
+
+    for release_name, release_def in RELEASES.items():
+        release_def["applications"] = _APP_RELEASE_MAP.get(release_name, [])
+
+    return dict(RELEASES[name])
+
+
 
 def releases_between(from_release: str, to_release: str) -> list[dict]:
     """Return ordered releases strictly between from and to (exclusive start)."""
