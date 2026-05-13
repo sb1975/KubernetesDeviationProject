@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import ChatBox from './components/ChatBox.jsx'
 import ClusterPanel from './components/ClusterPanel.jsx'
 import AppDeviationPanel from './components/AppDeviationPanel.jsx'
@@ -6,6 +6,32 @@ import ReleasePanel from './components/ReleasePanel.jsx'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('releases')
+  const [chatWidth, setChatWidth] = useState(33.33)
+  const dragging = useRef(false)
+
+  const onMouseDown = useCallback((e) => {
+    e.preventDefault()
+    dragging.current = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+
+    const onMouseMove = (ev) => {
+      if (!dragging.current) return
+      const pct = (ev.clientX / window.innerWidth) * 100
+      setChatWidth(Math.min(60, Math.max(15, pct)))
+    }
+
+    const onMouseUp = () => {
+      dragging.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [])
 
   return (
     <div className="app">
@@ -16,12 +42,15 @@ export default function App() {
       </header>
 
       <div className="app-body">
-        {/* Chat panel — 1/3 */}
-        <aside className="chat-panel">
+        {/* Chat panel */}
+        <aside className="chat-panel" style={{ width: `${chatWidth}%` }}>
           <ChatBox />
         </aside>
 
-        {/* Main panel — 2/3 */}
+        {/* Resize handle */}
+        <div className="resize-handle" onMouseDown={onMouseDown} />
+
+        {/* Main panel */}
         <main className="main-panel">
           <div className="tabs">
             <div

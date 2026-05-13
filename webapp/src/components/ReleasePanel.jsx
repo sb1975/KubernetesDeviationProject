@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import ReleaseDiffPanel from './ReleaseDiffPanel'
 
 export default function ReleasePanel() {
+  const [activeView, setActiveView] = useState('catalog') // 'catalog' | 'diff'
   const [releases, setReleases] = useState({})
   const [releaseOrder, setReleaseOrder] = useState([])
   const [loading, setLoading] = useState(true)
@@ -160,6 +162,25 @@ export default function ReleasePanel() {
 
   return (
     <div>
+      {/* Sub-tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button
+          className={activeView === 'catalog' ? 'btn-blue' : 'btn-gray'}
+          onClick={() => setActiveView('catalog')}
+        >
+          📋 Release Catalog
+        </button>
+        <button
+          className={activeView === 'diff' ? 'btn-blue' : 'btn-gray'}
+          onClick={() => setActiveView('diff')}
+        >
+          🔄 Release Diff
+        </button>
+      </div>
+
+      {activeView === 'diff' && <ReleaseDiffPanel />}
+
+      {activeView === 'catalog' && (<>
       <div className="card">
         <div className="card-title">Release Catalog</div>
         <div style={{ color: '#8b949e', fontSize: 12 }}>
@@ -329,6 +350,7 @@ export default function ReleasePanel() {
           )
         })}
       </div>
+      </>)}
     </div>
   )
 }
