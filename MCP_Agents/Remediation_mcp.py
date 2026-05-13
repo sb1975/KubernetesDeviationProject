@@ -25,6 +25,28 @@ from Deployment_mcp import deploy_cluster, delete_cluster, deploy_app, upgrade_a
 from releases import get_release, get_app_for_release
 
 
+def _find_free_port(start: int = 30001, end: int = 30100) -> int:
+    """Find a host port not currently in use by Docker containers."""
+    import subprocess
+    r = subprocess.run(["docker", "ps", "--format", "{{.Ports}}"], capture_output=True, text=True, check=False)
+    used = set()
+    for line in r.stdout.splitlines():
+        # parse "0.0.0.0:30000->30000/tcp" patterns
+        for part in line.split(","):
+            part = part.strip()
+            if "->" in part and ":" in part:
+                try:
+                    host_part = part.split("->")[0]
+                    port_str = host_part.rsplit(":", 1)[-1]
+                    used.add(int(port_str))
+                except (ValueError, IndexError):
+                    pass
+    for p in range(start, end):
+        if p not in used:
+            return p
+    return start  # fallback
+
+
 _REMEDIATION_SYSTEM = (
     "You are a Kubernetes remediation planner. Given a deviation report, "
     "generate a step-by-step remediation plan. Each step should include: "
@@ -174,9 +196,12 @@ def execute_remediation(report_id: str) -> dict[str, Any]:
                 cluster_name = params.get("cluster_name") or params.get("cluster")
                 release = params.get("release") or params.get("target_release")
                 delete_cluster(cluster_name)
+                # Pick a free host port to avoid conflicts
+                host_port = _find_free_port()
                 out = deploy_cluster(
                     cluster_name=cluster_name,
                     release=release,
+                    host_port=host_port,
                     recreate=True,
                     verbose=True,
                 )
@@ -206,34 +231,69 @@ def execute_remediation(report_id: str) -> dict[str, Any]:
                 step_result["success"] = out.get("success", False)
 
             elif action == "fix_app":
-                out = fix_app(
-                    params["cluster_name"],
-                    params["app_name"],
-                    params.get("namespace", "default"),
-                    params["expected_image"],
-                    params["expected_replicas"],
-                    params.get("app_found", False),
+                # Check if LLM misclassified a docker resource update as fix_app
+                container = params.get("target") or params.get("container_name") or ""
+                is_docker_update = (
+                    params.get("resource_type") or
+                    params.get("cpus") is not None or
+                    params.get("memory") is not None or
+                    container.endswith("-control-plane")
                 )
-                step_result["outcome"] = out
-                step_result["success"] = out.get("success", False)
+                if is_docker_update:
+                    import subprocess
+                    shell_cmd = params.get("command")
+                    if shell_cmd and isinstance(shell_cmd, str) and shell_cmd.startswith("docker "):
+                        r = subprocess.run(shell_cmd.split(), capture_output=True, text=True, check=False)
+                        step_result["outcome"] = {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}
+                        step_result["success"] = r.returncode == 0
+                    else:
+                        if not container:
+                            cn = params.get("cluster_name") or params.get("cluster") or ""
+                            container = f"{cn}-control-plane"
+                        value = str(params.get("value") or params.get("cpus") or params.get("memory") or "0.5")
+                        rtype = params.get("resource_type") or params.get("field") or ("cpus" if params.get("cpus") is not None else "memory")
+                        flag = f"--cpus={value}" if rtype in ("cpus", "cpu") else f"--memory={value}"
+                        r = subprocess.run(["docker", "update", flag, container], capture_output=True, text=True, check=False)
+                        step_result["outcome"] = {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}
+                        step_result["success"] = r.returncode == 0
+                else:
+                    out = fix_app(
+                        params.get("cluster_name") or params.get("cluster"),
+                        params.get("app_name") or params.get("name"),
+                        params.get("namespace", "default"),
+                        params.get("expected_image") or params.get("image"),
+                        params.get("expected_replicas") or params.get("replicas"),
+                        params.get("app_found", False),
+                    )
+                    step_result["outcome"] = out
+                    step_result["success"] = out.get("success", False)
 
             elif action in ("update_resources", "docker_update", "update_cpu", "update_memory"):
                 # Docker update for CPU/memory
                 import subprocess
-                cluster_name = params.get("cluster_name") or params.get("cluster")
-                field = params.get("field") or ("cpus" if "cpu" in action else "memory")
+                cluster_name = params.get("cluster_name") or params.get("cluster") or params.get("target", "").replace("-control-plane", "")
+                field = params.get("field") or params.get("resource_type") or ("cpus" if "cpu" in action else "memory")
                 value = params.get("value") or params.get("cpus") or params.get("memory")
-                if field == "cpus":
-                    cmd = ["docker", "update", f"--cpus={value}", f"{cluster_name}-control-plane"]
+                container = params.get("target") or f"{cluster_name}-control-plane"
+                if field in ("cpus", "cpu"):
+                    cmd = ["docker", "update", f"--cpus={value}", container]
                 else:
-                    cmd = ["docker", "update", f"--memory={value}", f"{cluster_name}-control-plane"]
+                    cmd = ["docker", "update", f"--memory={value}", container]
                 r = subprocess.run(cmd, capture_output=True, text=True, check=False)
                 step_result["outcome"] = {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}
                 step_result["success"] = r.returncode == 0
 
             else:
-                step_result["success"] = False
-                step_result["outcome"] = {"error": f"Unknown action '{action}'"}
+                # Fallback: if params has a 'command' field, try running it directly
+                import subprocess
+                shell_cmd = params.get("command")
+                if shell_cmd and isinstance(shell_cmd, str) and shell_cmd.startswith(("docker ", "kubectl ")):
+                    r = subprocess.run(shell_cmd.split(), capture_output=True, text=True, check=False)
+                    step_result["outcome"] = {"stdout": r.stdout, "stderr": r.stderr, "exit_code": r.returncode}
+                    step_result["success"] = r.returncode == 0
+                else:
+                    step_result["success"] = False
+                    step_result["outcome"] = {"error": f"Unknown action '{action}'"}
 
         except Exception as e:
             step_result["success"] = False
