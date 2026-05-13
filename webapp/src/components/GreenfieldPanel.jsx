@@ -7,7 +7,6 @@ const DEFAULT_SUBNETS = {
   c4: { pod: '10.40.0.0/16', svc: '10.140.0.0/12', port: 30004 },
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
 const HIDDEN_CLUSTER_NAMES = new Set(['eric15'])
 
 function deriveClusterNetwork(name) {
@@ -82,7 +81,7 @@ export default function GreenfieldPanel() {
 
   const refreshClusters = () => {
     setLoadingClusters(true)
-    fetch(`${API_BASE}/api/clusters`)
+    fetch('/api/clusters')
       .then(r => r.json())
       .then(d => {
         const nextClusters = (d.clusters || []).filter(c => !HIDDEN_CLUSTER_NAMES.has(c.name))
@@ -95,7 +94,7 @@ export default function GreenfieldPanel() {
   const waitForCluster = async (name, attempts = 12, delayMs = 5000) => {
     for (let i = 0; i < attempts; i += 1) {
       try {
-        const r = await fetch(`${API_BASE}/api/clusters`)
+        const r = await fetch('/api/clusters')
         if (r.ok) {
           const d = await r.json()
           const found = (d.clusters || []).some(c => c.name === name)
@@ -121,7 +120,7 @@ export default function GreenfieldPanel() {
     setResult(null)
 
     try {
-      const resp = await fetch(`${API_BASE}/api/greenfield/deploy`, {
+      const resp = await fetch('/api/greenfield/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, release: selectedRelease }),
@@ -164,7 +163,7 @@ export default function GreenfieldPanel() {
     setDeletingCluster(name)
     setLog('')
     try {
-      const resp = await fetch(`${API_BASE}/api/greenfield/cluster/${name}`, { method: 'DELETE' })
+      const resp = await fetch(`/api/greenfield/cluster/${name}`, { method: 'DELETE' })
       const data = await resp.json().catch(() => null)
       if (!resp.ok || (data && data.success === false)) {
         const errMsg = data?.detail || data?.stdout || `Delete failed (HTTP ${resp.status})`
