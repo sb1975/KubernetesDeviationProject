@@ -124,6 +124,21 @@ echo "[INFO] Installing frontend dependencies (if needed)"
   npm install --silent
 )
 
+regenerate_kind_configs() {
+  local input_file="$ROOT_DIR/MCP_Agents/input/cluster_input.json"
+  local output_dir="$ROOT_DIR/MCP_Agents/generated-kind-configs"
+
+  if [[ ! -f "$input_file" ]]; then
+    echo "[WARN] Cluster input file not found — skipping YAML regeneration"
+    return 0
+  fi
+
+  echo "[INFO] Regenerating generated kind config YAML files"
+  (cd "$ROOT_DIR/MCP_Agents" && "$PYTHON_BIN" Artifact_mcp.py generate --input "$input_file" --output-dir "$output_dir")
+}
+
+regenerate_kind_configs
+
 start_service \
   "artifact_mcp" \
   "8765" \

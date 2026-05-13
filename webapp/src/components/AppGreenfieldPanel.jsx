@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 
+const HIDDEN_CLUSTER_NAMES = new Set(['eric15'])
+
 export default function AppGreenfieldPanel() {
   const [clusters, setClusters] = useState([])
   const [releases, setReleases] = useState({})
@@ -14,9 +16,12 @@ export default function AppGreenfieldPanel() {
 
   useEffect(() => {
     fetch('/api/clusters').then(r => r.json()).then(d => {
-      const cls = d.clusters || []
+      const cls = (d.clusters || []).filter(c => !HIDDEN_CLUSTER_NAMES.has(c.name))
       setClusters(cls)
-      if (cls.length) setSelectedCluster(cls[0].name)
+      setSelectedCluster(prev => {
+        if (cls.some(c => c.name === prev)) return prev
+        return cls[0]?.name || ''
+      })
     }).catch(() => {})
 
     fetch('/api/releases').then(r => r.json()).then(d => {
@@ -25,6 +30,22 @@ export default function AppGreenfieldPanel() {
       setReleaseOrder(order)
       if (order.length) setSelectedRelease(order[order.length - 1])
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const handleClustersUpdated = () => {
+      fetch('/api/clusters').then(r => r.json()).then(d => {
+        const cls = (d.clusters || []).filter(c => !HIDDEN_CLUSTER_NAMES.has(c.name))
+        setClusters(cls)
+        setSelectedCluster(prev => {
+          if (cls.some(c => c.name === prev)) return prev
+          return cls[0]?.name || ''
+        })
+      }).catch(() => {})
+    }
+
+    window.addEventListener('clusters-updated', handleClustersUpdated)
+    return () => window.removeEventListener('clusters-updated', handleClustersUpdated)
   }, [])
 
   // Fetch deployed apps when cluster changes

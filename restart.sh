@@ -131,6 +131,19 @@ ensure_deps() {
   echo
 }
 
+regenerate_kind_configs() {
+  local input_file="$ROOT_DIR/MCP_Agents/input/cluster_input.json"
+  local output_dir="$ROOT_DIR/MCP_Agents/generated-kind-configs"
+
+  if [[ ! -f "$input_file" ]]; then
+    warn "Cluster input file not found — skipping YAML regeneration"
+    return 0
+  fi
+
+  info "Regenerating generated kind config YAML files"
+  (cd "$ROOT_DIR/MCP_Agents" && "$PYTHON_BIN" Artifact_mcp.py generate --input "$input_file" --output-dir "$output_dir")
+}
+
 stop_service() {
   local name="$1"
   local pid_file="$RUN_DIR/${name}.pid"
@@ -160,7 +173,6 @@ stop_service() {
 is_port_listening() {
   ss -ltn | grep -q ":${1} "
 }
-
 start_service() {
   local name="$1"
   local port="$2"
@@ -186,6 +198,8 @@ start_service() {
 }
 
 # ── Service definitions ──────────────────────────────────────────────────────
+
+regenerate_kind_configs
 
 restart_backend() {
   echo "── Restarting Backend API (port 8000) ──"
