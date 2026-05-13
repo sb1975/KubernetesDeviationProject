@@ -30,6 +30,7 @@ MCP_AGENTS = Path(__file__).parent.parent.parent / "MCP_Agents"
 sys.path.insert(0, str(MCP_AGENTS))
 
 from releases import RELEASES, RELEASE_ORDER, update_release_definition  # noqa: E402
+from cluster_registry import add_cluster, remove_cluster  # noqa: E402
 from Deployment_mcp import (  # noqa: E402
     get_releases,
     get_cluster_status,
@@ -200,7 +201,7 @@ def api_cluster_status() -> dict[str, Any]:
 @app.post("/api/greenfield/deploy")
 def api_deploy(body: DeployRequest) -> dict[str, Any]:
     try:
-        return deploy_cluster(
+        result = deploy_cluster(
             cluster_name=body.cluster_name,
             release=body.release,
             pod_subnet=body.pod_subnet,
@@ -209,6 +210,9 @@ def api_deploy(body: DeployRequest) -> dict[str, Any]:
             recreate=body.recreate,
             verbose=body.verbose,
         )
+        if result.get("success"):
+            add_cluster(body.cluster_name)
+        return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -216,7 +220,17 @@ def api_deploy(body: DeployRequest) -> dict[str, Any]:
 @app.delete("/api/greenfield/cluster/{cluster_name}")
 def api_delete_cluster(cluster_name: str) -> dict[str, Any]:
     try:
-        return delete_cluster(cluster_name)
+        result = delete_cluster(cluster_name)
+        if result.get("success"):
+            remove_cluster(cluster_name)
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("stdout") or f"kind delete failed (exit {result.get('exit_code')})",
+            )
+        return result
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
