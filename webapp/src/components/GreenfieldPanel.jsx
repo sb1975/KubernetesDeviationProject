@@ -8,6 +8,7 @@ const DEFAULT_SUBNETS = {
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000'
+const HIDDEN_CLUSTER_NAMES = new Set(['eric15'])
 
 function deriveClusterNetwork(name) {
   const key = name.trim().toLowerCase()
@@ -51,6 +52,7 @@ export default function GreenfieldPanel() {
     verbose: true,
   })
   const [deploying, setDeploying] = useState(false)
+  const [deletingCluster, setDeletingCluster] = useState(null)
   const [log, setLog] = useState('')
   const [result, setResult] = useState(null)
   const [loadingClusters, setLoadingClusters] = useState(true)
@@ -69,11 +71,24 @@ export default function GreenfieldPanel() {
     refreshClusters()
   }, [])
 
+  useEffect(() => {
+    const handleClustersUpdated = () => {
+      refreshClusters()
+    }
+
+    window.addEventListener('clusters-updated', handleClustersUpdated)
+    return () => window.removeEventListener('clusters-updated', handleClustersUpdated)
+  }, [])
+
   const refreshClusters = () => {
     setLoadingClusters(true)
     fetch(`${API_BASE}/api/clusters`)
       .then(r => r.json())
-      .then(d => { setClusters(d.clusters || []); setLoadingClusters(false) })
+      .then(d => {
+        const nextClusters = (d.clusters || []).filter(c => !HIDDEN_CLUSTER_NAMES.has(c.name))
+        setClusters(nextClusters)
+        setLoadingClusters(false)
+      })
       .catch(() => setLoadingClusters(false))
   }
 
@@ -146,8 +161,24 @@ export default function GreenfieldPanel() {
 
   const deleteCluster = async name => {
     if (!confirm(`Delete cluster '${name}'?`)) return
-    await fetch(`${API_BASE}/api/greenfield/cluster/${name}`, { method: 'DELETE' })
-    refreshClusters()
+    setDeletingCluster(name)
+    setLog('')
+    try {
+      const resp = await fetch(`${API_BASE}/api/greenfield/cluster/${name}`, { method: 'DELETE' })
+      const data = await resp.json().catch(() => null)
+      if (!resp.ok || (data && data.success === false)) {
+        const errMsg = data?.detail || data?.stdout || `Delete failed (HTTP ${resp.status})`
+        setLog(`Error deleting '${name}': ${errMsg}`)
+      } else {
+        setLog(`Cluster '${name}' deleted successfully.`)
+        window.dispatchEvent(new Event('clusters-updated'))
+      }
+    } catch (e) {
+      setLog(`Error deleting '${name}': ${String(e?.message || e)}`)
+    } finally {
+      setDeletingCluster(null)
+      refreshClusters()
+    }
   }
 
   const rel = releases[selectedRelease]
@@ -184,8 +215,9 @@ export default function GreenfieldPanel() {
                   className="btn-red"
                   style={{ fontSize: 11, padding: '3px 8px', marginTop: 8 }}
                   onClick={() => deleteCluster(c.name)}
+                  disabled={deletingCluster === c.name}
                 >
-                  Delete
+                  {deletingCluster === c.name ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
             ))}

@@ -108,6 +108,17 @@ echo
 
 echo "── Step 3: Cleanup ──"
 
+echo "Removing generated kind config YAML files..."
+mapfile -t YAML_FILES < <(find "$ROOT_DIR/MCP_Agents" -maxdepth 2 -type f -name '*.yaml' \( -path '*/generated-kind-configs-*/*' -o -path '*/generated-kind-configs/*' \) 2>/dev/null || true)
+if [[ ${#YAML_FILES[@]} -gt 0 ]]; then
+  for yaml_file in "${YAML_FILES[@]}"; do
+    rm -f "$yaml_file"
+  done
+  ok "Removed ${#YAML_FILES[@]} generated YAML file(s)"
+else
+  info "No generated YAML files found"
+fi
+
 if [[ -d "$RUN_DIR" ]]; then
   rm -rf "$RUN_DIR"
   ok "Cleared .run directory"
