@@ -19,6 +19,10 @@ export default function AppBrownfieldPanel() {
   const [scanning, setScanning] = useState(false)
   const [fixing, setFixing] = useState({})  // keyed by app name
   const [fixResults, setFixResults] = useState({})
+  // Approval workflow state per app (keyed by report_id)
+  const [approvalStatus, setApprovalStatus] = useState({}) // report_id -> 'pending'|'approved'|'remediating'|'remediated'|'rejected'
+  const [remediationResults, setRemediationResults] = useState({}) // report_id -> result
+  const [actionLoading, setActionLoading] = useState({}) // report_id -> boolean
 
   useEffect(() => {
     fetch('/api/clusters').then(r => r.json()).then(d => {
@@ -59,6 +63,9 @@ export default function AppBrownfieldPanel() {
     setScanning(true)
     setScanResult(null)
     setFixResults({})
+    setApprovalStatus({})
+    setRemediationResults({})
+    setActionLoading({})
     try {
       const resp = await fetch('/api/apps/scan', {
         method: 'POST',
@@ -70,7 +77,16 @@ export default function AppBrownfieldPanel() {
         try { setScanResult(JSON.parse(t)) } catch { setScanResult({ error: `Server error (${resp.status}): ${t}` }) }
         return
       }
-      setScanResult(await resp.json())
+      const data = await resp.json()
+      setScanResult(data)
+      // Initialize approval status for each deviated app report
+      const initStatus = {}
+      for (const r of (data.reports || [])) {
+        if (r.report_id) {
+          initStatus[r.report_id] = r.approval_status || 'pending_approval'
+        }
+      }
+      setApprovalStatus(initStatus)
     } catch (e) {
       setScanResult({ error: e.message })
     } finally {
@@ -78,41 +94,55 @@ export default function AppBrownfieldPanel() {
     }
   }
 
-  const fixApp = async (report) => {
-    const appName = report.app_name
-    setFixing(prev => ({ ...prev, [appName]: true }))
+  const approveAndRemediate = async (reportId) => {
+    if (!reportId) return
+    setActionLoading(prev => ({ ...prev, [reportId]: true }))
     try {
-      const resp = await fetch('/api/apps/fix', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cluster_name: selectedCluster,
-          app_name: appName,
-          namespace: report.namespace || 'default',
-          expected_image: report.expected_image,
-          expected_replicas: report.expected_replicas,
-          app_found: !!report.app_found,
-        }),
-      })
-      if (!resp.ok) {
-        const t = await resp.text()
-        setFixResults(prev => ({ ...prev, [appName]: { success: false, error: `Server error (${resp.status}): ${t}` } }))
+      // Step 1: Approve
+      const approveResp = await fetch(`/api/reports/${reportId}/approve`, { method: 'POST' })
+      if (!approveResp.ok) {
+        alert('Failed to approve report')
         return
       }
-      const data = await resp.json()
-      setFixResults(prev => ({ ...prev, [appName]: data }))
-    } catch (e) {
-      setFixResults(prev => ({ ...prev, [appName]: { success: false, error: e.message } }))
+      setApprovalStatus(prev => ({ ...prev, [reportId]: 'approved' }))
+
+      // Step 2: Execute remediation
+      setApprovalStatus(prev => ({ ...prev, [reportId]: 'remediating' }))
+      const remResp = await fetch(`/api/reports/${reportId}/remediate`, { method: 'POST' })
+      if (!remResp.ok) {
+        const err = await remResp.text()
+        alert(`Remediation failed: ${err}`)
+        setApprovalStatus(prev => ({ ...prev, [reportId]: 'approved' }))
+        return
+      }
+      const result = await remResp.json()
+      setRemediationResults(prev => ({ ...prev, [reportId]: result }))
+      setApprovalStatus(prev => ({ ...prev, [reportId]: 'remediated' }))
     } finally {
-      setFixing(prev => ({ ...prev, [appName]: false }))
+      setActionLoading(prev => ({ ...prev, [reportId]: false }))
     }
   }
 
-  const fixAll = async () => {
+  const rejectReport = async (reportId) => {
+    if (!reportId) return
+    setActionLoading(prev => ({ ...prev, [reportId]: true }))
+    try {
+      await fetch(`/api/reports/${reportId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'User rejected from UI' }),
+      })
+      setApprovalStatus(prev => ({ ...prev, [reportId]: 'rejected' }))
+    } finally {
+      setActionLoading(prev => ({ ...prev, [reportId]: false }))
+    }
+  }
+
+  const approveAndRemediateAll = async () => {
     if (!scanResult?.reports) return
-    const nonCompliant = scanResult.reports.filter(r => !r.compliant && !r.error?.startsWith('Unknown'))
-    for (const report of nonCompliant) {
-      await fixApp(report)
+    const deviated = scanResult.reports.filter(r => !r.compliant && r.report_id)
+    for (const report of deviated) {
+      await approveAndRemediate(report.report_id)
     }
   }
 
@@ -241,14 +271,14 @@ export default function AppBrownfieldPanel() {
                 ))}
               </div>
 
-              {/* Fix All button */}
+              {/* Approve & Remediate All button */}
               {hasDeviations && (
                 <button
                   className="btn-blue"
-                  onClick={fixAll}
+                  onClick={approveAndRemediateAll}
                   style={{ width: '100%', marginBottom: 16, background: '#da3633', borderColor: '#f85149' }}
                 >
-                  🔧 Fix All Deviations
+                  ✓ Approve & Remediate All Deviations
                 </button>
               )}
 
@@ -257,9 +287,11 @@ export default function AppBrownfieldPanel() {
                 <AppReportCard
                   key={idx}
                   report={report}
-                  fixing={!!fixing[report.app_name]}
-                  fixResult={fixResults[report.app_name]}
-                  onFix={() => fixApp(report)}
+                  approvalStatus={approvalStatus[report.report_id]}
+                  remediationResult={remediationResults[report.report_id]}
+                  isLoading={!!actionLoading[report.report_id]}
+                  onApprove={() => approveAndRemediate(report.report_id)}
+                  onReject={() => rejectReport(report.report_id)}
                 />
               ))}
             </>
@@ -270,7 +302,7 @@ export default function AppBrownfieldPanel() {
   )
 }
 
-function AppReportCard({ report, fixing, fixResult, onFix }) {
+function AppReportCard({ report, approvalStatus, remediationResult, isLoading, onApprove, onReject }) {
   const isCompliant = report.compliant
   const notDeployed = !report.app_found && !report.error?.startsWith('Unknown')
   const hasDeviations = report.deviations?.length > 0
@@ -303,17 +335,12 @@ function AppReportCard({ report, fixing, fixResult, onFix }) {
           <span style={{ marginLeft: 8, fontSize: 11, color: '#8b949e' }}>
             ns: {report.namespace || 'default'}
           </span>
+          {report.report_id && (
+            <span style={{ marginLeft: 8, fontSize: 10, color: '#8b949e' }}>
+              ID: {report.report_id.slice(0, 8)}
+            </span>
+          )}
         </div>
-        {!isCompliant && (
-          <button
-            className="btn-blue"
-            style={{ fontSize: 11, padding: '4px 12px' }}
-            disabled={fixing}
-            onClick={onFix}
-          >
-            {fixing ? <><span className="spinner" />Fixing...</> : '🔧 Fix'}
-          </button>
-        )}
       </div>
 
       {/* Details */}
@@ -388,24 +415,98 @@ function AppReportCard({ report, fixing, fixResult, onFix }) {
           </div>
         )}
 
-        {/* Fix result */}
-        {fixResult && (
+        {/* AI Analysis */}
+        {report.llm_analysis && (
+          <div style={{ background: '#21262d', borderRadius: 6, padding: '10px 12px', marginTop: 10, borderLeft: '3px solid #58a6ff' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#58a6ff', marginBottom: 4 }}>🤖 AI Risk Assessment</div>
+            <div style={{ fontSize: 12, color: '#c9d1d9', marginBottom: 4 }}>{report.llm_analysis.risk_assessment}</div>
+            <div style={{ fontSize: 11, color: '#8b949e' }}>
+              Priority: <span className={`badge ${report.llm_analysis.priority === 'immediate' ? 'badge-critical' : report.llm_analysis.priority === 'scheduled' ? 'badge-warning' : 'badge-ok'}`}>
+                {report.llm_analysis.priority}
+              </span>
+            </div>
+            {report.llm_analysis.impact_notes && (
+              <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>{report.llm_analysis.impact_notes}</div>
+            )}
+          </div>
+        )}
+
+        {/* Remediation Steps */}
+        {hasDeviations && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#c9d1d9', marginBottom: 4 }}>Remediation Steps:</div>
+            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11 }}>
+              {report.deviations.map((d, i) => (
+                <li key={i} style={{ marginBottom: 4, color: '#8b949e' }}>
+                  <strong>{d.field}:</strong> <span className="remediation">{d.remediation}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* ─── APPROVAL SECTION ─── */}
+        {!isCompliant && report.report_id && (
           <div style={{
-            marginTop: 10,
-            padding: '8px 12px',
-            borderRadius: 6,
-            background: fixResult.success ? '#1f4429' : '#3d1e1e',
-            border: `1px solid ${fixResult.success ? '#3fb950' : '#f85149'}`,
-            fontSize: 12,
+            background: '#161b22',
+            border: '1px solid #30363d',
+            borderRadius: 8,
+            padding: 12,
+            marginTop: 12,
           }}>
-            <strong style={{ color: fixResult.success ? '#3fb950' : '#f85149' }}>
-              {fixResult.success ? '✓ Fixed successfully' : '✗ Fix failed'}
-            </strong>
-            {fixResult.actions?.map((a, i) => (
-              <div key={i} style={{ marginTop: 4, color: '#c9d1d9' }}>
-                {a.action}: {a.success ? '✓' : `✗ ${a.stderr || a.error || ''}`}
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#c9d1d9', marginBottom: 6 }}>
+              {(!approvalStatus || approvalStatus === 'pending_approval') && '⏳ Awaiting Approval'}
+              {approvalStatus === 'approved' && '✓ Approved'}
+              {approvalStatus === 'remediating' && '🔧 Remediating...'}
+              {approvalStatus === 'remediated' && '✓ Remediation Complete'}
+              {approvalStatus === 'rejected' && '✗ Rejected'}
+            </div>
+
+            {(!approvalStatus || approvalStatus === 'pending_approval') && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn-blue"
+                  onClick={onApprove}
+                  disabled={isLoading}
+                  style={{ fontSize: 11, padding: '6px 14px' }}
+                >
+                  {isLoading ? <><span className="spinner" />Processing…</> : '✓ Approve & Remediate'}
+                </button>
+                <button
+                  className="btn-red"
+                  onClick={onReject}
+                  disabled={isLoading}
+                  style={{ fontSize: 11, padding: '6px 14px' }}
+                >
+                  ✗ Reject
+                </button>
               </div>
-            ))}
+            )}
+
+            {approvalStatus === 'remediating' && (
+              <div style={{ fontSize: 12, color: '#d29922' }}>
+                <span className="spinner" /> Executing remediation...
+              </div>
+            )}
+
+            {approvalStatus === 'remediated' && remediationResult && (
+              <div style={{ fontSize: 11 }}>
+                <div style={{ color: '#3fb950', marginBottom: 6 }}>
+                  ✓ {remediationResult.successful_steps}/{remediationResult.total_steps} steps completed successfully
+                </div>
+                {remediationResult.steps_executed?.map((step, i) => (
+                  <div key={i} style={{ marginBottom: 3, color: step.success ? '#3fb950' : '#f85149' }}>
+                    {step.success ? '✓' : '✗'} {step.description || step.action}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {approvalStatus === 'rejected' && (
+              <div style={{ fontSize: 11, color: '#8b949e' }}>
+                Report dismissed. No changes made.
+              </div>
+            )}
           </div>
         )}
       </div>
