@@ -56,9 +56,10 @@ def _get_docker_resources(cluster_name: str) -> dict[str, str]:
     parts = r.stdout.strip().split()
     if len(parts) == 2:
         try:
-            cpus = str(round(int(parts[0]) / 1e9, 2))
-            mem_mb = int(int(parts[1]) / (1024 * 1024))
-            memory = f"{mem_mb}m" if int(parts[1]) > 0 else "unlimited"
+            nano_cpus = int(parts[0])
+            cpus = "unlimited" if nano_cpus == 0 else str(round(nano_cpus / 1e9, 2))
+            mem_bytes = int(parts[1])
+            memory = "unlimited" if mem_bytes == 0 else f"{mem_bytes // (1024 * 1024)}m"
         except ValueError:
             cpus, memory = "unknown", "unknown"
     else:
