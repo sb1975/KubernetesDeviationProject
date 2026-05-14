@@ -10,21 +10,25 @@ const STATUS_BADGE = {
 export default function ReportsPanel() {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all') // all, pending_approval, approved, remediated, rejected
+  const [filter, setFilter] = useState('all')
+  const [typeTab, setTypeTab] = useState('cluster') // 'cluster' | 'app'
   const [actionLoading, setActionLoading] = useState({})
   const [planPreview, setPlanPreview] = useState(null)
   const [planLoading, setPlanLoading] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
 
   const fetchReports = () => {
     const url = filter === 'all' ? '/api/reports' : `/api/reports?status=${filter}`
     fetch(url)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
-      .then(d => setReports(d.reports || []))
+      .then(d => { setReports(d.reports || []); setSelectedIds(new Set()) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
 
   useEffect(() => { fetchReports() }, [filter])
+
+  const filteredReports = reports.filter(r => r.type === typeTab)
 
   const approveReport = async (id) => {
     setActionLoading(prev => ({ ...prev, [id]: 'approving' }))
@@ -65,19 +69,52 @@ export default function ReportsPanel() {
     }
   }
 
-  const executeRemediation = async (id) => {
-    if (!confirm('Execute remediation? This will modify the cluster/application.')) return
-    setActionLoading(prev => ({ ...prev, [id]: 'remediating' }))
-    try {
-      const resp = await fetch(`/api/reports/${id}/remediate`, { method: 'POST' })
-      if (resp.ok) fetchReports()
-      else {
-        const err = await resp.text()
-        alert(`Remediation failed: ${err}`)
-      }
-    } finally {
-      setActionLoading(prev => ({ ...prev, [id]: null }))
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    if (selectedIds.size === filteredReports.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredReports.map(r => r.id)))
     }
+  }
+
+  const downloadCSV = () => {
+    const selected = filteredReports.filter(r => selectedIds.has(r.id))
+    if (selected.length === 0) return
+
+    const headers = ['ID', 'Type', 'Status', 'Target', 'Summary', 'Deviations', 'AI Priority', 'AI Risk Assessment', 'Created']
+    const rows = selected.map(r => {
+      const report = r.report || {}
+      const deviations = (report.deviations || []).map(d => `${d.field}: ${d.current} → ${d.expected}`).join('; ')
+      return [
+        r.id,
+        r.type,
+        r.status,
+        report.cluster || report.app_name || '',
+        (report.summary || '').replace(/,/g, ';'),
+        deviations.replace(/,/g, ';'),
+        report.llm_analysis?.priority || '',
+        (report.llm_analysis?.risk_assessment || '').replace(/,/g, ';'),
+        r.created_at || '',
+      ]
+    })
+
+    const csv = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `deviation-reports-${typeTab}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   if (loading) {
@@ -94,6 +131,28 @@ export default function ReportsPanel() {
         <div className="card-title">Deviation Reports & Approval</div>
         <div style={{ color: '#8b949e', fontSize: 12, marginBottom: 12 }}>
           Review deviation reports, approve for remediation, or reject.
+        </div>
+
+        {/* Type tabs: Cluster / Applications */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderBottom: '1px solid #30363d' }}>
+          {[['cluster', '🖥️ Cluster'], ['app', '📦 Applications']].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => { setTypeTab(key); setSelectedIds(new Set()) }}
+              style={{
+                padding: '8px 16px',
+                fontSize: 13,
+                fontWeight: 600,
+                background: 'transparent',
+                border: 'none',
+                borderBottom: typeTab === key ? '2px solid #58a6ff' : '2px solid transparent',
+                color: typeTab === key ? '#58a6ff' : '#8b949e',
+                cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {/* Filter tabs */}
@@ -116,25 +175,53 @@ export default function ReportsPanel() {
             🔄 Refresh
           </button>
         </div>
+
+        {/* Select All + Download CSV */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+          <label style={{ fontSize: 12, color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={filteredReports.length > 0 && selectedIds.size === filteredReports.length}
+              onChange={selectAll}
+              style={{ cursor: 'pointer' }}
+            />
+            Select All ({filteredReports.length})
+          </label>
+          {selectedIds.size > 0 && (
+            <button
+              className="btn-gray"
+              onClick={downloadCSV}
+              style={{ fontSize: 11, padding: '4px 10px' }}
+            >
+              📥 Download CSV ({selectedIds.size})
+            </button>
+          )}
+        </div>
       </div>
 
-      {reports.length === 0 && (
+      {filteredReports.length === 0 && (
         <div className="card" style={{ color: '#8b949e', fontSize: 13 }}>
-          No reports found. Run a deviation analysis to generate reports.
+          No {typeTab} reports found. Run a deviation analysis to generate reports.
         </div>
       )}
 
-      {reports.map(r => {
+      {filteredReports.map(r => {
         const report = r.report || {}
         const badge = STATUS_BADGE[r.status] || { label: r.status, cls: '' }
         const isActioning = actionLoading[r.id]
 
         return (
           <div key={r.id} className="card" style={{ borderLeft: `3px solid ${r.status === 'pending_approval' ? '#d29922' : r.status === 'approved' ? '#3fb950' : r.status === 'rejected' ? '#f85149' : '#58a6ff'}` }}>
-            {/* Header */}
+            {/* Header with checkbox */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div>
-                <span className={`badge ${badge.cls}`} style={{ marginRight: 8 }}>{badge.label}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(r.id)}
+                  onChange={() => toggleSelect(r.id)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span className={`badge ${badge.cls}`}>{badge.label}</span>
                 <span style={{ fontSize: 12, color: '#8b949e' }}>
                   {r.type === 'cluster' ? '🖥️' : '📦'} {r.type} • ID: {r.id}
                 </span>
@@ -207,19 +294,14 @@ export default function ReportsPanel() {
                     disabled={planLoading}
                     style={{ fontSize: 12 }}
                   >
-                    📋 Preview Plan
+                    📋 Impact Analysis
                   </button>
                 </>
               )}
               {r.status === 'approved' && (
-                <button
-                  className="btn-blue"
-                  onClick={() => executeRemediation(r.id)}
-                  disabled={!!isActioning}
-                  style={{ fontSize: 12 }}
-                >
-                  {isActioning === 'remediating' ? <><span className="spinner" />Remediating…</> : '🔧 Execute Remediation'}
-                </button>
+                <div style={{ fontSize: 12, color: '#3fb950' }}>
+                  ✓ Approved — remediation available from Cluster/Applications tab
+                </div>
               )}
               {r.status === 'remediated' && r.remediation_result && (
                 <div style={{ fontSize: 12, color: '#3fb950' }}>
@@ -233,10 +315,10 @@ export default function ReportsPanel() {
               )}
             </div>
 
-            {/* Plan preview */}
+            {/* Plan preview (Impact Analysis) */}
             {planPreview && planPreview.id === r.id && (
               <div style={{ marginTop: 10, background: '#21262d', borderRadius: 6, padding: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#58a6ff', marginBottom: 6 }}>Remediation Plan</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#58a6ff', marginBottom: 6 }}>Impact Analysis and Remediation Plan</div>
                 {planPreview.plan?.steps?.map((step, i) => (
                   <div key={i} style={{ fontSize: 12, marginBottom: 6, color: '#c9d1d9' }}>
                     <span style={{ color: step.risk === 'high' ? '#f85149' : step.risk === 'medium' ? '#d29922' : '#3fb950' }}>

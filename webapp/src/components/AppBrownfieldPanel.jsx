@@ -276,7 +276,7 @@ export default function AppBrownfieldPanel() {
                 <button
                   className="btn-blue"
                   onClick={approveAndRemediateAll}
-                  style={{ width: '100%', marginBottom: 16, background: '#da3633', borderColor: '#f85149' }}
+                  style={{ width: '100%', marginBottom: 16 }}
                 >
                   ✓ Approve & Remediate All Deviations
                 </button>

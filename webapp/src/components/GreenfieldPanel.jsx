@@ -77,12 +77,8 @@ export default function GreenfieldPanel() {
 
     window.addEventListener('clusters-updated', handleClustersUpdated)
 
-    // Auto-refresh cluster list every 5 seconds
-    const interval = setInterval(refreshClusters, 5000)
-
     return () => {
       window.removeEventListener('clusters-updated', handleClustersUpdated)
-      clearInterval(interval)
     }
   }, [])
 
