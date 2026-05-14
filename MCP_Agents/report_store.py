@@ -23,8 +23,39 @@ def create_report(
     report_type: str,  # "cluster" or "app"
     report_data: dict[str, Any],
 ) -> dict[str, Any]:
-    """Save a deviation report and return it with an ID and status."""
-    report_id = str(uuid.uuid4())[:8]
+    """Save a deviation report and return it with an ID and status.
+
+    Deduplicates: if an existing pending_approval report exists for the same
+    cluster/app + target_release, it is replaced rather than creating a duplicate.
+    """
+    # Determine the identity key for dedup
+    target = report_data.get("target_release", "")
+    if report_type == "cluster":
+        identity = report_data.get("cluster", "")
+    else:
+        identity = f"{report_data.get('cluster', '')}/{report_data.get('app_name', '')}"
+
+    # Check for existing pending report with same identity+target
+    existing_id = None
+    for p in REPORTS_DIR.glob("*.json"):
+        try:
+            with p.open("r") as f:
+                rec = json.load(f)
+            if (
+                rec.get("type") == report_type
+                and rec.get("status") == "pending_approval"
+                and rec.get("report", {}).get("target_release") == target
+            ):
+                if report_type == "cluster" and rec["report"].get("cluster") == identity:
+                    existing_id = rec["id"]
+                    break
+                elif report_type == "app" and f"{rec['report'].get('cluster', '')}/{rec['report'].get('app_name', '')}" == identity:
+                    existing_id = rec["id"]
+                    break
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    report_id = existing_id or str(uuid.uuid4())[:8]
     record = {
         "id": report_id,
         "type": report_type,
