@@ -16,6 +16,7 @@ export default function ReportsPanel() {
   const [planPreview, setPlanPreview] = useState(null)
   const [planLoading, setPlanLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const [generating, setGenerating] = useState(false)
 
   const fetchReports = () => {
     const url = filter === 'all' ? '/api/reports' : `/api/reports?status=${filter}`
@@ -27,6 +28,48 @@ export default function ReportsPanel() {
   }
 
   useEffect(() => { fetchReports() }, [filter])
+
+  const generateReports = async () => {
+    setGenerating(true)
+    try {
+      // Fetch clusters and releases
+      const [clustersResp, releasesResp] = await Promise.all([
+        fetch('/api/clusters').then(r => r.json()),
+        fetch('/api/releases').then(r => r.json()),
+      ])
+      const clusters = clustersResp.clusters || []
+      const order = releasesResp.order || []
+      const latestRelease = order[order.length - 1]
+      if (!latestRelease || clusters.length === 0) {
+        setGenerating(false)
+        return
+      }
+
+      // Generate cluster deviation reports
+      for (const cluster of clusters) {
+        await fetch('/api/brownfield/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cluster_name: cluster.name, target_release: latestRelease }),
+        }).catch(() => {})
+      }
+
+      // Generate app deviation reports
+      for (const cluster of clusters) {
+        await fetch('/api/apps/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cluster_name: cluster.name, target_release: latestRelease }),
+        }).catch(() => {})
+      }
+
+      fetchReports()
+    } catch (e) {
+      console.error('Report generation failed:', e)
+    } finally {
+      setGenerating(false)
+    }
+  }
 
   const filteredReports = reports.filter(r => r.type === typeTab)
 
@@ -168,11 +211,12 @@ export default function ReportsPanel() {
             </button>
           ))}
           <button
-            className="btn-gray"
-            onClick={fetchReports}
+            className="btn-blue"
+            onClick={generateReports}
+            disabled={generating}
             style={{ fontSize: 11, padding: '4px 10px', marginLeft: 'auto' }}
           >
-            🔄 Refresh
+            {generating ? <><span className="spinner" />Generating…</> : '📊 Generate Report'}
           </button>
         </div>
 
