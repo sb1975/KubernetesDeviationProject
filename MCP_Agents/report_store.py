@@ -35,7 +35,7 @@ def create_report(
     else:
         identity = f"{report_data.get('cluster', '')}/{report_data.get('app_name', '')}"
 
-    # Check for existing pending report with same identity+target
+    # Check for existing pending/compliant report with same identity+target
     existing_id = None
     for p in REPORTS_DIR.glob("*.json"):
         try:
@@ -43,7 +43,7 @@ def create_report(
                 rec = json.load(f)
             if (
                 rec.get("type") == report_type
-                and rec.get("status") == "pending_approval"
+                and rec.get("status") in ("pending_approval", "compliant")
                 and rec.get("report", {}).get("target_release") == target
             ):
                 if report_type == "cluster" and rec["report"].get("cluster") == identity:
@@ -55,11 +55,15 @@ def create_report(
         except (json.JSONDecodeError, KeyError):
             continue
 
+    # Determine status based on compliance
+    is_compliant = report_data.get("compliant", False)
+    status = "compliant" if is_compliant else "pending_approval"
+
     report_id = existing_id or str(uuid.uuid4())[:8]
     record = {
         "id": report_id,
         "type": report_type,
-        "status": "pending_approval",
+        "status": status,
         "created_at": _now(),
         "updated_at": _now(),
         "approved_by": None,

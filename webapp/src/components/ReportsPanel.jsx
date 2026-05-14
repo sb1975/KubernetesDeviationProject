@@ -5,6 +5,7 @@ const STATUS_BADGE = {
   approved: { label: '✓ Approved', cls: 'badge-ok' },
   rejected: { label: '✗ Rejected', cls: 'badge-critical' },
   remediated: { label: '🔧 Remediated', cls: 'badge-info' },
+  compliant: { label: '✓ Compliant', cls: 'badge-ok' },
 }
 
 export default function ReportsPanel() {
@@ -17,6 +18,9 @@ export default function ReportsPanel() {
   const [planLoading, setPlanLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [generating, setGenerating] = useState(false)
+  const [releases, setReleases] = useState({})
+  const [releaseOrder, setReleaseOrder] = useState([])
+  const [selectedRelease, setSelectedRelease] = useState('')
 
   const fetchReports = () => {
     const url = filter === 'all' ? '/api/reports' : `/api/reports?status=${filter}`
@@ -29,37 +33,42 @@ export default function ReportsPanel() {
 
   useEffect(() => { fetchReports() }, [filter])
 
+  // Fetch releases on mount
+  useEffect(() => {
+    fetch('/api/releases').then(r => r.json()).then(d => {
+      setReleases(d.releases || {})
+      const order = d.order || []
+      setReleaseOrder(order)
+      if (order.length) setSelectedRelease(order[order.length - 1])
+    }).catch(() => {})
+  }, [])
+
   const generateReports = async () => {
+    if (!selectedRelease) return
     setGenerating(true)
     try {
-      // Fetch clusters and releases
-      const [clustersResp, releasesResp] = await Promise.all([
-        fetch('/api/clusters').then(r => r.json()),
-        fetch('/api/releases').then(r => r.json()),
-      ])
+      const clustersResp = await fetch('/api/clusters').then(r => r.json())
       const clusters = clustersResp.clusters || []
-      const order = releasesResp.order || []
-      const latestRelease = order[order.length - 1]
-      if (!latestRelease || clusters.length === 0) {
+      if (clusters.length === 0) {
         setGenerating(false)
         return
       }
 
-      // Generate cluster deviation reports
+      // Generate cluster deviation reports against selected release
       for (const cluster of clusters) {
         await fetch('/api/brownfield/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cluster_name: cluster.name, target_release: latestRelease }),
+          body: JSON.stringify({ cluster_name: cluster.name, target_release: selectedRelease }),
         }).catch(() => {})
       }
 
-      // Generate app deviation reports
+      // Generate app deviation reports against selected release
       for (const cluster of clusters) {
         await fetch('/api/apps/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cluster_name: cluster.name, target_release: latestRelease }),
+          body: JSON.stringify({ cluster_name: cluster.name, target_release: selectedRelease }),
         }).catch(() => {})
       }
 
@@ -199,8 +208,8 @@ export default function ReportsPanel() {
         </div>
 
         {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-          {['all', 'pending_approval', 'approved', 'remediated', 'rejected'].map(f => (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {['all', 'pending_approval', 'compliant', 'approved', 'remediated', 'rejected'].map(f => (
             <button
               key={f}
               className={filter === f ? 'btn-blue' : 'btn-gray'}
@@ -210,11 +219,25 @@ export default function ReportsPanel() {
               {f === 'all' ? 'All' : f.replace('_', ' ')}
             </button>
           ))}
+        </div>
+
+        {/* Release selector + Generate */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <label style={{ fontSize: 12, color: '#8b949e' }}>Baseline Release:</label>
+          <select
+            value={selectedRelease}
+            onChange={e => setSelectedRelease(e.target.value)}
+            style={{ fontSize: 12, padding: '4px 8px', background: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: 4 }}
+          >
+            {releaseOrder.map(r => (
+              <option key={r} value={r}>{r} — k8s {releases[r]?.kubernetes_version}</option>
+            ))}
+          </select>
           <button
             className="btn-blue"
             onClick={generateReports}
-            disabled={generating}
-            style={{ fontSize: 11, padding: '4px 10px', marginLeft: 'auto' }}
+            disabled={generating || !selectedRelease}
+            style={{ fontSize: 11, padding: '4px 12px' }}
           >
             {generating ? <><span className="spinner" />Generating…</> : '📊 Generate Report'}
           </button>
@@ -314,6 +337,11 @@ export default function ReportsPanel() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {r.status === 'compliant' && (
+                <div style={{ fontSize: 12, color: '#3fb950' }}>
+                  ✓ Compliant — no action required
+                </div>
+              )}
               {r.status === 'pending_approval' && (
                 <>
                   <button

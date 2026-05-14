@@ -381,14 +381,17 @@ def analyze_app_deviation(
     app_status = _get_app_in_cluster(cluster_name, namespace, app_name)
 
     if app_status is None:
-        return {
+        not_deployed_result = {
             "cluster": cluster_name,
             "app_name": app_name,
             "app_found": False,
             "namespace": namespace,
+            "target_release": target_release,
+            "compliant": False,
             "error": f"App '{app_name}' not found in namespace '{namespace}'",
             "expected_image": app_baseline["image"],
             "expected_replicas": app_baseline["replicas"],
+            "summary": f"App '{app_name}' is NOT DEPLOYED in cluster '{cluster_name}'",
             "deviations": [
                 {
                     "field": "app_presence",
@@ -415,7 +418,12 @@ def analyze_app_deviation(
                     ),
                 }
             ],
+            "generated_at": datetime.datetime.now().isoformat(),
         }
+        stored = create_report("app", not_deployed_result)
+        not_deployed_result["report_id"] = stored["id"]
+        not_deployed_result["approval_status"] = stored["status"]
+        return not_deployed_result
 
     # Detect deviations
     deviations: list[dict[str, Any]] = []
@@ -481,11 +489,12 @@ def analyze_app_deviation(
     }
 
     # Enrich with LLM analysis and store report
+    result["generated_at"] = datetime.datetime.now().isoformat()
     if deviations:
         result = _enrich_with_llm(result)
-        stored = create_report("app", result)
-        result["report_id"] = stored["id"]
-        result["approval_status"] = stored["status"]
+    stored = create_report("app", result)
+    result["report_id"] = stored["id"]
+    result["approval_status"] = stored["status"]
 
     return result
 
