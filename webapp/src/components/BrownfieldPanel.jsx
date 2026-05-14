@@ -76,9 +76,20 @@ export default function BrownfieldPanel() {
       }
       const data = await resp.json()
       setReport(data)
-      // If there are deviations, report is pending approval
-      if (data.deviations?.length > 0 && data.report_id) {
-        setApprovalStatus('pending')
+      // Use actual approval status from backend (may already be approved via Reports tab)
+      if (data.report_id) {
+        const status = data.approval_status || 'pending_approval'
+        // Map backend statuses to UI states
+        if (status === 'approved') setApprovalStatus('approved')
+        else if (status === 'remediated') {
+          setApprovalStatus('remediated')
+          // Fetch remediation result if available
+          fetch(`/api/reports/${data.report_id}`).then(r => r.json()).then(r => {
+            if (r.remediation_result) setRemediationResult(r.remediation_result)
+          }).catch(() => {})
+        } else if (status === 'rejected') setApprovalStatus('rejected')
+        else if (status === 'pending_approval' && data.deviations?.length > 0) setApprovalStatus('pending')
+        else if (status === 'compliant') setApprovalStatus(null) // compliant, no action needed
       }
     } catch (e) {
       setReport({ error: e.message })
@@ -365,6 +376,39 @@ export default function BrownfieldPanel() {
                             </button>
                           </div>
                         </>
+                      )}
+
+                      {approvalStatus === 'approved' && (
+                        <div style={{ fontSize: 12, color: '#3fb950' }}>
+                          ✓ This report was approved (via Reports tab). You can now execute remediation.
+                          <div style={{ marginTop: 8 }}>
+                            <button
+                              className="btn-blue"
+                              onClick={async () => {
+                                setApprovalStatus('remediating')
+                                setActionLoading(true)
+                                try {
+                                  const remResp = await fetch(`/api/reports/${report.report_id}/remediate`, { method: 'POST' })
+                                  if (!remResp.ok) {
+                                    const err = await remResp.text()
+                                    alert(`Remediation failed: ${err}`)
+                                    setApprovalStatus('approved')
+                                    return
+                                  }
+                                  const result = await remResp.json()
+                                  setRemediationResult(result)
+                                  setApprovalStatus('remediated')
+                                } finally {
+                                  setActionLoading(false)
+                                }
+                              }}
+                              disabled={actionLoading}
+                              style={{ padding: '8px 20px' }}
+                            >
+                              {actionLoading ? <><span className="spinner" />Remediating…</> : '🔧 Execute Remediation'}
+                            </button>
+                          </div>
+                        </div>
                       )}
 
                       {approvalStatus === 'remediating' && (

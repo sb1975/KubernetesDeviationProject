@@ -79,7 +79,7 @@ export default function AppBrownfieldPanel() {
       }
       const data = await resp.json()
       setScanResult(data)
-      // Initialize approval status for each deviated app report
+      // Initialize approval status from actual backend state (respects Reports tab approvals)
       const initStatus = {}
       for (const r of (data.reports || [])) {
         if (r.report_id) {
@@ -98,13 +98,16 @@ export default function AppBrownfieldPanel() {
     if (!reportId) return
     setActionLoading(prev => ({ ...prev, [reportId]: true }))
     try {
-      // Step 1: Approve
-      const approveResp = await fetch(`/api/reports/${reportId}/approve`, { method: 'POST' })
-      if (!approveResp.ok) {
-        alert('Failed to approve report')
-        return
+      // Step 1: Approve (skip if already approved)
+      const currentStatus = approvalStatus[reportId]
+      if (currentStatus !== 'approved') {
+        const approveResp = await fetch(`/api/reports/${reportId}/approve`, { method: 'POST' })
+        if (!approveResp.ok) {
+          alert('Failed to approve report')
+          return
+        }
+        setApprovalStatus(prev => ({ ...prev, [reportId]: 'approved' }))
       }
-      setApprovalStatus(prev => ({ ...prev, [reportId]: 'approved' }))
 
       // Step 2: Execute remediation
       setApprovalStatus(prev => ({ ...prev, [reportId]: 'remediating' }))
@@ -480,6 +483,22 @@ function AppReportCard({ report, approvalStatus, remediationResult, isLoading, o
                 >
                   ✗ Reject
                 </button>
+              </div>
+            )}
+
+            {approvalStatus === 'approved' && (
+              <div style={{ fontSize: 11, color: '#3fb950' }}>
+                ✓ Approved (via Reports tab). Click to execute remediation.
+                <div style={{ marginTop: 6 }}>
+                  <button
+                    className="btn-blue"
+                    onClick={onApprove}
+                    disabled={isLoading}
+                    style={{ fontSize: 11, padding: '6px 14px' }}
+                  >
+                    {isLoading ? <><span className="spinner" />Remediating…</> : '🔧 Execute Remediation'}
+                  </button>
+                </div>
               </div>
             )}
 
