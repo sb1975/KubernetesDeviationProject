@@ -35,29 +35,44 @@ def create_report(
     else:
         identity = f"{report_data.get('cluster', '')}/{report_data.get('app_name', '')}"
 
-    # Check for existing pending/compliant report with same identity+target
-    existing_id = None
+    # Check for existing report with same identity+target (any non-terminal status)
+    # Collect ALL matches — keep the first, delete the rest (cleanup old duplicates)
+    matching_ids = []
+    existing_status = None
     for p in REPORTS_DIR.glob("*.json"):
         try:
             with p.open("r") as f:
                 rec = json.load(f)
             if (
                 rec.get("type") == report_type
-                and rec.get("status") in ("pending_approval", "compliant")
+                and rec.get("status") in ("pending_approval", "compliant", "approved", "remediated")
                 and rec.get("report", {}).get("target_release") == target
             ):
+                matched = False
                 if report_type == "cluster" and rec["report"].get("cluster") == identity:
-                    existing_id = rec["id"]
-                    break
+                    matched = True
                 elif report_type == "app" and f"{rec['report'].get('cluster', '')}/{rec['report'].get('app_name', '')}" == identity:
-                    existing_id = rec["id"]
-                    break
+                    matched = True
+                if matched:
+                    matching_ids.append((rec["id"], rec.get("status"), rec.get("approved_by"), rec.get("remediation_result")))
         except (json.JSONDecodeError, KeyError):
             continue
 
-    # Determine status based on compliance
+    # Keep the first match, delete any extras
+    existing_id = matching_ids[0][0] if matching_ids else None
+    existing_status = matching_ids[0][1] if matching_ids else None
+    existing_approved_by = matching_ids[0][2] if matching_ids else None
+    existing_remediation_result = matching_ids[0][3] if matching_ids else None
+    for extra_id, *_ in matching_ids[1:]:
+        (REPORTS_DIR / f"{extra_id}.json").unlink(missing_ok=True)
+
+    # Determine status: preserve approved/remediated state, otherwise base on compliance
     is_compliant = report_data.get("compliant", False)
-    status = "compliant" if is_compliant else "pending_approval"
+    if existing_status in ("approved", "remediated"):
+        # Preserve the approved/remediated state — don't reset to pending
+        status = existing_status
+    else:
+        status = "compliant" if is_compliant else "pending_approval"
 
     report_id = existing_id or str(uuid.uuid4())[:8]
     record = {
@@ -66,9 +81,9 @@ def create_report(
         "status": status,
         "created_at": _now(),
         "updated_at": _now(),
-        "approved_by": None,
+        "approved_by": existing_approved_by,
         "rejected_reason": None,
-        "remediation_result": None,
+        "remediation_result": existing_remediation_result,
         "report": report_data,
     }
     _save(report_id, record)
