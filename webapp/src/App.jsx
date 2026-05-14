@@ -3,6 +3,7 @@ import ChatBox from './components/ChatBox.jsx'
 import ClusterPanel from './components/ClusterPanel.jsx'
 import AppDeviationPanel from './components/AppDeviationPanel.jsx'
 import ReleasePanel from './components/ReleasePanel.jsx'
+import ReportsPanel from './components/ReportsPanel.jsx'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('releases')
@@ -71,12 +72,19 @@ export default function App() {
             >
               📦 Applications
             </div>
+            <div
+              className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reports')}
+            >
+              📋 Reports
+            </div>
           </div>
 
           <div className="panel-content">
             {activeTab === 'clusters' && <ClusterPanel />}
             {activeTab === 'apps' && <AppDeviationPanel />}
             {activeTab === 'releases' && <ReleasePanel />}
+            {activeTab === 'reports' && <ReportsPanel />}
           </div>
         </main>
       </div>

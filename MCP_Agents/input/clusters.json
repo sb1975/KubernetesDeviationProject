@@ -2,6 +2,7 @@
   "schema_version": "1.0",
   "clusters": [
     "dlstx1",
-    "dlstx2"
+    "dlstx2",
+    "laca1"
   ]
 }

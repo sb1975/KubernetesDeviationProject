@@ -17,6 +17,9 @@ export default function BrownfieldPanel() {
   const [targetRelease, setTargetRelease] = useState('')
   const [report, setReport] = useState(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [approvalStatus, setApprovalStatus] = useState(null) // null | 'pending' | 'approved' | 'rejected' | 'remediating' | 'remediated'
+  const [remediationResult, setRemediationResult] = useState(null)
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/clusters').then(r => r.json()).then(d => {
@@ -58,6 +61,8 @@ export default function BrownfieldPanel() {
     if (!selectedCluster || !targetRelease) return
     setAnalyzing(true)
     setReport(null)
+    setApprovalStatus(null)
+    setRemediationResult(null)
     try {
       const resp = await fetch('/api/brownfield/analyze', {
         method: 'POST',
@@ -69,11 +74,71 @@ export default function BrownfieldPanel() {
         try { setReport(JSON.parse(t)) } catch { setReport({ error: `Server error (${resp.status}): ${t}` }) }
         return
       }
-      setReport(await resp.json())
+      const data = await resp.json()
+      setReport(data)
+      // Use actual approval status from backend (may already be approved via Reports tab)
+      if (data.report_id) {
+        const status = data.approval_status || 'pending_approval'
+        // Map backend statuses to UI states
+        if (status === 'approved') setApprovalStatus('approved')
+        else if (status === 'remediated') {
+          setApprovalStatus('remediated')
+          // Fetch remediation result if available
+          fetch(`/api/reports/${data.report_id}`).then(r => r.json()).then(r => {
+            if (r.remediation_result) setRemediationResult(r.remediation_result)
+          }).catch(() => {})
+        } else if (status === 'rejected') setApprovalStatus('rejected')
+        else if (status === 'pending_approval' && data.deviations?.length > 0) setApprovalStatus('pending')
+        else if (status === 'compliant') setApprovalStatus(null) // compliant, no action needed
+      }
     } catch (e) {
       setReport({ error: e.message })
     } finally {
       setAnalyzing(false)
+    }
+  }
+
+  const approveAndRemediate = async () => {
+    if (!report?.report_id) return
+    setActionLoading(true)
+    try {
+      // Step 1: Approve
+      const approveResp = await fetch(`/api/reports/${report.report_id}/approve`, { method: 'POST' })
+      if (!approveResp.ok) {
+        alert('Failed to approve report')
+        return
+      }
+      setApprovalStatus('approved')
+
+      // Step 2: Execute remediation
+      setApprovalStatus('remediating')
+      const remResp = await fetch(`/api/reports/${report.report_id}/remediate`, { method: 'POST' })
+      if (!remResp.ok) {
+        const err = await remResp.text()
+        alert(`Remediation failed: ${err}`)
+        setApprovalStatus('approved')
+        return
+      }
+      const result = await remResp.json()
+      setRemediationResult(result)
+      setApprovalStatus('remediated')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const rejectReport = async () => {
+    if (!report?.report_id) return
+    setActionLoading(true)
+    try {
+      await fetch(`/api/reports/${report.report_id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'User rejected from UI' }),
+      })
+      setApprovalStatus('rejected')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -103,6 +168,53 @@ export default function BrownfieldPanel() {
                 </select>
               </div>
             </div>
+
+            {/* Selected cluster info */}
+            {selectedCluster && (() => {
+              const c = clusters.find(cl => cl.name === selectedCluster)
+              if (!c) return null
+              const rel = c.detected_release ? releases[c.detected_release] : null
+              return (
+                <div style={{ background: '#21262d', borderRadius: 6, padding: '10px 14px', marginBottom: 12, marginTop: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#58a6ff', marginBottom: 6 }}>
+                    📊 Current Cluster State
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, fontSize: 12 }}>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Release:</span>{' '}
+                      <span className="badge badge-info">{c.detected_release || 'Unknown'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>K8s Version:</span>{' '}
+                      <strong style={{ color: '#c9d1d9' }}>v{c.version}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Status:</span>{' '}
+                      <span style={{ color: c.ready ? '#3fb950' : '#f85149' }}>{c.ready ? '● Ready' : '● Not Ready'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Nodes:</span>{' '}
+                      <strong style={{ color: '#c9d1d9' }}>{c.node_count || 1}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>Runtime:</span>{' '}
+                      <span style={{ color: '#c9d1d9' }}>{c.container_runtime || '—'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#8b949e' }}>OS Image:</span>{' '}
+                      <span style={{ color: '#c9d1d9' }}>{c.os_image || '—'}</span>
+                    </div>
+                    {rel && (
+                      <div>
+                        <span style={{ color: '#8b949e' }}>Expected (target):</span>{' '}
+                        <span style={{ color: '#d29922' }}>k8s {releases[targetRelease]?.kubernetes_version}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+
             <button
               className="btn-blue"
               disabled={analyzing || !selectedCluster || !targetRelease}
@@ -130,9 +242,13 @@ export default function BrownfieldPanel() {
                     fontSize: 13,
                   }}>
                     <strong style={{ color: report.compliant ? '#3fb950' : '#f85149' }}>
-                      {report.compliant ? '✓ COMPLIANT' : '✗ DEVIATIONS DETECTED'}
+                      {report.compliant ? '✓ COMPLIANT — No action needed' : '✗ DEVIATIONS DETECTED — Review required'}
                     </strong>
-                    <span style={{ marginLeft: 10, color: '#c9d1d9' }}>{report.summary}</span>
+                    {report.report_id && (
+                      <span style={{ float: 'right', fontSize: 11, color: '#8b949e' }}>
+                        Report ID: {report.report_id}
+                      </span>
+                    )}
                   </div>
 
                   {/* Metadata row */}
@@ -150,64 +266,176 @@ export default function BrownfieldPanel() {
                     ))}
                   </div>
 
-                  {/* Deviations table */}
-                  {report.deviations?.length > 0 && (
-                    <>
-                      <div className="card-title">Deviations</div>
-                      <table className="deviation-table" style={{ marginBottom: 16 }}>
-                        <thead>
-                          <tr>
-                            <th>Field</th>
-                            <th>Current</th>
-                            <th>Expected</th>
-                            <th>Severity</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {report.deviations.map((d, i) => (
-                            <tr key={i}>
-                              <td style={{ fontWeight: 600 }}>{d.field}</td>
-                              <td><code style={{ color: '#f85149', fontSize: 12 }}>{d.current}</code></td>
-                              <td><code style={{ color: '#3fb950', fontSize: 12 }}>{d.expected}</code></td>
-                              <td><span className={`badge ${SEVERITY_CLASS[d.severity] || 'badge-unknown'}`}>{d.severity}</span></td>
-                              <td style={{ color: '#d29922', fontSize: 12 }}>{d.action}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {/* AI Analysis */}
+                  {report.llm_analysis && (
+                    <div style={{ background: '#21262d', borderRadius: 6, padding: '12px 14px', marginBottom: 16, borderLeft: '3px solid #58a6ff' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#58a6ff', marginBottom: 6 }}>🤖 AI Risk Assessment</div>
+                      <div style={{ fontSize: 12, color: '#c9d1d9', marginBottom: 6 }}>{report.llm_analysis.risk_assessment}</div>
+                      <div style={{ fontSize: 12, color: '#8b949e' }}>
+                        Priority: <span className={`badge ${report.llm_analysis.priority === 'immediate' ? 'badge-critical' : report.llm_analysis.priority === 'scheduled' ? 'badge-warning' : 'badge-ok'}`}>
+                          {report.llm_analysis.priority}
+                        </span>
+                      </div>
+                      {report.llm_analysis.impact_notes && (
+                        <div style={{ fontSize: 12, color: '#8b949e', marginTop: 4 }}>{report.llm_analysis.impact_notes}</div>
+                      )}
+                    </div>
+                  )}
 
-                      {/* Remediation steps */}
+                  {/* Key Deviations — bullet points */}
+                  {report.deviations?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div className="card-title">Key Deviations</div>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                        {report.deviations.map((d, i) => (
+                          <li key={i} style={{ fontSize: 13, padding: '6px 0', borderBottom: '1px solid #21262d', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className={`badge ${SEVERITY_CLASS[d.severity] || ''}`} style={{ minWidth: 70, textAlign: 'center' }}>{d.severity}</span>
+                            <span style={{ color: '#c9d1d9' }}>
+                              <strong>{d.field}</strong>: <code style={{ color: '#f85149' }}>{d.current}</code> → <code style={{ color: '#3fb950' }}>{d.expected}</code>
+                            </span>
+                            <span style={{ marginLeft: 'auto', color: '#d29922', fontSize: 11 }}>{d.action}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Remediation Steps — bullet points */}
+                  {report.deviations?.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
                       <div className="card-title">Remediation Steps</div>
-                      {report.deviations.map((d, i) => (
-                        <div key={i} style={{ marginBottom: 10 }}>
-                          <div style={{ fontSize: 12, color: '#c9d1d9', marginBottom: 4 }}>
-                            {i + 1}. Fix <strong>{d.field}</strong>:
-                          </div>
-                          <div className="remediation">{d.remediation}</div>
-                        </div>
-                      ))}
-                    </>
+                      <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12 }}>
+                        {report.deviations.map((d, i) => (
+                          <li key={i} style={{ marginBottom: 8, color: '#c9d1d9' }}>
+                            <strong>Fix {d.field}:</strong>
+                            <div className="remediation" style={{ marginTop: 4 }}>{d.remediation}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
 
                   {/* Upgrade path */}
                   {report.upgrade_path?.length > 0 && (
-                    <>
-                      <div className="card-title" style={{ marginTop: 16 }}>Recommended Upgrade Path</div>
-                      {report.upgrade_path.map((step, i) => (
-                        <div key={i} style={{ marginBottom: 10 }}>
-                          <div style={{ fontSize: 12, color: '#c9d1d9', marginBottom: 4 }}>
-                            Step {i + 1}: Upgrade to <span className="badge badge-info">{step.release}</span> (k8s {step.kubernetes_version})
+                    <div style={{ marginBottom: 16 }}>
+                      <div className="card-title">Recommended Upgrade Path</div>
+                      <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12 }}>
+                        {report.upgrade_path.map((step, i) => (
+                          <li key={i} style={{ marginBottom: 8, color: '#c9d1d9' }}>
+                            Upgrade to <span className="badge badge-info">{step.release}</span> (k8s {step.kubernetes_version})
+                            {step.changes?.length > 0 && (
+                              <ul style={{ color: '#8b949e', marginTop: 4, paddingLeft: 16 }}>
+                                {step.changes.map((c, j) => <li key={j}>{c}</li>)}
+                              </ul>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* ─── APPROVAL SECTION ─── */}
+                  {report.deviations?.length > 0 && (
+                    <div style={{
+                      background: '#161b22',
+                      border: '1px solid #30363d',
+                      borderRadius: 8,
+                      padding: 16,
+                      marginTop: 16,
+                    }}>
+                      <div className="card-title" style={{ marginBottom: 8 }}>
+                        {approvalStatus === 'pending' && '⏳ Awaiting Your Approval'}
+                        {approvalStatus === 'approved' && '✓ Approved'}
+                        {approvalStatus === 'remediating' && '🔧 Remediating...'}
+                        {approvalStatus === 'remediated' && '✓ Remediation Complete'}
+                        {approvalStatus === 'rejected' && '✗ Rejected'}
+                      </div>
+
+                      {approvalStatus === 'pending' && (
+                        <>
+                          <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 12 }}>
+                            Review the deviations and remediation steps above. Click <strong>Approve & Remediate</strong> to
+                            execute the fix, or <strong>Reject</strong> to dismiss this report.
                           </div>
-                          {step.changes?.length > 0 && (
-                            <ul style={{ fontSize: 12, color: '#8b949e', marginLeft: 16, marginBottom: 4 }}>
-                              {step.changes.map((c, j) => <li key={j}>{c}</li>)}
-                            </ul>
-                          )}
-                          <div className="remediation">{step.command}</div>
+                          <div style={{ display: 'flex', gap: 10 }}>
+                            <button
+                              className="btn-blue"
+                              onClick={approveAndRemediate}
+                              disabled={actionLoading}
+                              style={{ padding: '8px 20px' }}
+                            >
+                              {actionLoading ? <><span className="spinner" />Processing…</> : '✓ Approve & Remediate'}
+                            </button>
+                            <button
+                              className="btn-red"
+                              onClick={rejectReport}
+                              disabled={actionLoading}
+                              style={{ padding: '8px 20px' }}
+                            >
+                              ✗ Reject
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {approvalStatus === 'approved' && (
+                        <div style={{ fontSize: 12, color: '#3fb950' }}>
+                          ✓ This report was approved (via Reports tab). You can now execute remediation.
+                          <div style={{ marginTop: 8 }}>
+                            <button
+                              className="btn-blue"
+                              onClick={async () => {
+                                setApprovalStatus('remediating')
+                                setActionLoading(true)
+                                try {
+                                  const remResp = await fetch(`/api/reports/${report.report_id}/remediate`, { method: 'POST' })
+                                  if (!remResp.ok) {
+                                    const err = await remResp.text()
+                                    alert(`Remediation failed: ${err}`)
+                                    setApprovalStatus('approved')
+                                    return
+                                  }
+                                  const result = await remResp.json()
+                                  setRemediationResult(result)
+                                  setApprovalStatus('remediated')
+                                } finally {
+                                  setActionLoading(false)
+                                }
+                              }}
+                              disabled={actionLoading}
+                              style={{ padding: '8px 20px' }}
+                            >
+                              {actionLoading ? <><span className="spinner" />Remediating…</> : '🔧 Execute Remediation'}
+                            </button>
+                          </div>
                         </div>
-                      ))}
-                    </>
+                      )}
+
+                      {approvalStatus === 'remediating' && (
+                        <div style={{ fontSize: 13, color: '#d29922' }}>
+                          <span className="spinner" /> Executing remediation steps via Deployment Agent...
+                        </div>
+                      )}
+
+                      {approvalStatus === 'remediated' && remediationResult && (
+                        <div style={{ fontSize: 12 }}>
+                          <div style={{ color: '#3fb950', marginBottom: 8 }}>
+                            ✓ {remediationResult.successful_steps}/{remediationResult.total_steps} steps completed successfully
+                          </div>
+                          {remediationResult.steps_executed?.map((step, i) => (
+                            <div key={i} style={{ marginBottom: 4, color: step.success ? '#3fb950' : '#f85149' }}>
+                              {step.success ? '✓' : '✗'} {step.description || step.action}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {approvalStatus === 'rejected' && (
+                        <div style={{ fontSize: 12, color: '#8b949e' }}>
+                          Report dismissed. No changes were made to the cluster.
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   <div style={{ fontSize: 11, color: '#8b949e', marginTop: 12 }}>

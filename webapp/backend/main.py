@@ -49,6 +49,16 @@ from Deviation_mcp import (  # noqa: E402
     analyze_app_deviation,
     scan_cluster_apps,
 )
+from Remediation_mcp import (  # noqa: E402
+    generate_remediation_plan,
+    execute_remediation,
+)
+from report_store import (  # noqa: E402
+    list_reports,
+    get_report,
+    approve_report,
+    reject_report,
+)
 
 app = FastAPI(title="K8s Deviation Dashboard API", version="1.0.0")
 
@@ -152,6 +162,10 @@ class AppFixRequest(BaseModel):
     expected_image: str
     expected_replicas: int
     app_found: bool
+
+
+class ReportRejectRequest(BaseModel):
+    reason: str = ""
 
 
 # ─── Releases ─────────────────────────────────────────────────────────────────
@@ -512,6 +526,77 @@ def api_fix_app(body: AppFixRequest) -> dict[str, Any]:
             body.expected_replicas,
             body.app_found,
         )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ─── Reports & Approval Workflow ───────────────────────────────────────────────
+
+@app.get("/api/reports")
+def api_list_reports(status: str | None = None) -> dict[str, Any]:
+    """List deviation reports, optionally filtered by status."""
+    try:
+        reports = list_reports(status=status)
+        return {"reports": reports}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/reports/{report_id}")
+def api_get_report(report_id: str) -> dict[str, Any]:
+    """Get a specific report by ID."""
+    rec = get_report(report_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Report '{report_id}' not found")
+    return rec
+
+
+@app.post("/api/reports/{report_id}/approve")
+def api_approve_report(report_id: str) -> dict[str, Any]:
+    """Approve a pending deviation report for remediation."""
+    try:
+        rec = approve_report(report_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"Report '{report_id}' not found")
+        return rec
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/reports/{report_id}/reject")
+def api_reject_report(report_id: str, body: ReportRejectRequest) -> dict[str, Any]:
+    """Reject a pending deviation report."""
+    try:
+        rec = reject_report(report_id, reason=body.reason)
+        if rec is None:
+            raise HTTPException(status_code=404, detail=f"Report '{report_id}' not found")
+        return rec
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/reports/{report_id}/plan")
+def api_remediation_plan(report_id: str) -> dict[str, Any]:
+    """Generate a remediation plan for a report (preview, does not execute)."""
+    try:
+        record = get_report(report_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Report '{report_id}' not found")
+        return generate_remediation_plan(record)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/reports/{report_id}/remediate")
+def api_execute_remediation(report_id: str) -> dict[str, Any]:
+    """Execute remediation for an APPROVED report via the Remediation Agent."""
+    try:
+        result = execute_remediation(report_id)
+        if result.get("error"):
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
