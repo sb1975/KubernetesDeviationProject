@@ -221,6 +221,28 @@ This project includes a full dev container configuration for one-click setup on 
 
 This project contains the Artifact MCP server used to generate kind cluster config YAML files and (optionally) deploy clusters from those generated artifacts.
 
+## GitOps Promotions (Kargo)
+
+This repository now includes a full GitOps promotion layout for three environments:
+
+- `dev`
+- `staging`
+- `production`
+
+Artifacts are promoted through Kargo `Warehouse` + `Freight` + `Stage` objects, and synced by Argo CD.
+
+Start here:
+
+- `gitops/README.md`
+
+Key manifests:
+
+- `gitops/apps/k8s-deviation/overlays/dev`
+- `gitops/apps/k8s-deviation/overlays/staging`
+- `gitops/apps/k8s-deviation/overlays/production`
+- `gitops/kargo/`
+- `gitops/argocd/`
+
 ## Files
 
 - `Artifact_mcp.py`: MCP/CLI server script
