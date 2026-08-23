@@ -1,0 +1,127 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-dev-api
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: backend-releases
+      interval: 30s
+      count: 3
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-backend.k8s-deviation-dev.svc.cluster.local:8000/api/releases
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-dev-ui
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: frontend-home
+      interval: 30s
+      count: 3
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-frontend.k8s-deviation-dev.svc.cluster.local:3000/
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-staging-api
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: backend-releases
+      interval: 30s
+      count: 3
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-backend.k8s-deviation-staging.svc.cluster.local:8000/api/releases
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-staging-ui
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: frontend-home
+      interval: 30s
+      count: 3
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-frontend.k8s-deviation-staging.svc.cluster.local:3000/
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-staging-deviation-scan
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: backend-clusters
+      interval: 45s
+      count: 2
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-backend.k8s-deviation-staging.svc.cluster.local:8000/api/clusters
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-production-api
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: backend-releases
+      interval: 30s
+      count: 5
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-backend.k8s-deviation-production.svc.cluster.local:8000/api/releases
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-production-ui
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: frontend-home
+      interval: 30s
+      count: 5
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-frontend.k8s-deviation-production.svc.cluster.local:3000/
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: verify-production-deviation-scan
+  namespace: k8s-deviation
+spec:
+  metrics:
+    - name: backend-clusters
+      interval: 45s
+      count: 3
+      successCondition: result == 200
+      provider:
+        web:
+          method: GET
+          url: http://k8s-deviation-backend.k8s-deviation-production.svc.cluster.local:8000/api/clusters

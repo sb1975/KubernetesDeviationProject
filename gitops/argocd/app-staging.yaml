@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8s-deviation-staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sb1975/KubernetesDeviationProject.git
+    targetRevision: main
+    path: gitops/apps/k8s-deviation/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8s-deviation-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

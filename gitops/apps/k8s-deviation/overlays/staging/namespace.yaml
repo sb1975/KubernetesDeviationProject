@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-deviation-staging
+  labels:
+    app.kubernetes.io/environment: staging
+    stage.kargo.akuity.io/name: staging
