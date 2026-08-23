@@ -342,6 +342,11 @@ check via the dashboard UI or relevant kubectl commands.\
 def api_chat_providers() -> dict[str, Any]:
     """Return available LLM providers based on configured env keys."""
     providers = []
+
+    if os.environ.get("AZURE_OPENAI_API_KEY") and os.environ.get("AZURE_OPENAI_ENDPOINT"):
+        model = os.environ.get("AZURE_OPENAI_MODEL", "gpt-5.5")
+        providers.append({"value": "azure", "label": f"Azure OpenAI ({model})", "ready": True})
+
     if os.environ.get("OPENAI_API_KEY"):
         providers.append({"value": "openai", "label": "OpenAI (GPT)", "ready": True})
     else:
@@ -373,7 +378,32 @@ async def api_chat(body: ChatRequest) -> dict[str, Any]:
     system_msg = ChatMessage(role="system", content=_SYSTEM_PROMPT)
     all_messages = [system_msg] + list(body.messages)
 
-    if body.provider == "openai":
+    if body.provider == "azure":
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY", "")
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        if not api_key or not endpoint:
+            raise HTTPException(status_code=400, detail="AZURE_OPENAI_API_KEY/ENDPOINT not configured in .env")
+        model = body.model or os.environ.get("AZURE_OPENAI_MODEL", "gpt-5.5")
+        api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        url = f"{endpoint.rstrip('/')}/openai/deployments/{model}/chat/completions?api-version={api_version}"
+        payload = {
+            "messages": [{"role": m.role, "content": m.content} for m in all_messages],
+        }
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={
+                    "api-key": api_key,
+                    "Content-Type": "application/json",
+                },
+            )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text)
+        data = resp.json()
+        return {"reply": data["choices"][0]["message"]["content"]}
+
+    elif body.provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
             raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured in .env")

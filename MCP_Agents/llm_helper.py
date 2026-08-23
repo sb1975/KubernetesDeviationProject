@@ -21,6 +21,14 @@ def _get_openai_key() -> str | None:
     return os.environ.get("OPENAI_API_KEY")
 
 
+def _get_azure_openai_key() -> str | None:
+    return os.environ.get("AZURE_OPENAI_API_KEY")
+
+
+def _get_azure_openai_endpoint() -> str | None:
+    return os.environ.get("AZURE_OPENAI_ENDPOINT")
+
+
 def call_llm(
     prompt: str,
     system: str = "",
@@ -33,14 +41,18 @@ def call_llm(
     Provider selection: tries gemini first (cheaper/faster), falls back to openai.
     """
     if provider is None:
-        if _get_gemini_key():
+        if _get_azure_openai_key() and _get_azure_openai_endpoint():
+            provider = "azure"
+        elif _get_gemini_key():
             provider = "gemini"
         elif _get_openai_key():
             provider = "openai"
         else:
             return None  # no LLM available
 
-    if provider == "gemini":
+    if provider == "azure":
+        return _call_azure_openai(prompt, system, model or os.environ.get("AZURE_OPENAI_MODEL", "gpt-5.5"), timeout)
+    elif provider == "gemini":
         return _call_gemini(prompt, system, model or "gemini-2.5-flash", timeout)
     elif provider == "openai":
         return _call_openai(prompt, system, model or "gpt-4o-mini", timeout)
@@ -102,4 +114,44 @@ def _call_openai(prompt: str, system: str, model: str, timeout: float) -> str | 
             data = json.loads(resp.read())
             return data["choices"][0]["message"]["content"]
     except Exception:
+        return None
+
+
+def _call_azure_openai(prompt: str, system: str, model: str, timeout: float) -> str | None:
+    """Call Azure OpenAI endpoint.
+
+    Azure uses a different URL format and api-key header (not Bearer token).
+    URL: {endpoint}/openai/deployments/{model}/chat/completions?api-version={version}
+    """
+    api_key = _get_azure_openai_key()
+    endpoint = _get_azure_openai_endpoint()
+    if not api_key or not endpoint:
+        return None
+
+    api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    url = f"{endpoint.rstrip('/')}/openai/deployments/{model}/chat/completions?api-version={api_version}"
+    payload = json.dumps({"messages": messages}).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "api-key": api_key,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            return data["choices"][0]["message"]["content"]
+    except Exception as e:
+        # Fall back to Gemini if Azure fails
+        if _get_gemini_key():
+            return _call_gemini(prompt, system, "gemini-2.5-flash", timeout)
         return None
