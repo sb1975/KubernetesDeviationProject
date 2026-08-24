@@ -4,15 +4,9 @@ metadata:
   name: k8s-deviation-warehouse
   namespace: k8s-deviation
 spec:
-  interval: 5m
+  interval: 1m
   subscriptions:
     - git:
         repoURL: https://github.com/sb1975/KubernetesDeviationProject.git
         branch: main
         path: gitops/apps/k8s-deviation
-    - image:
-        repoURL: ghcr.io/sb1975/kubernetes-deviation-backend
-        semverConstraint: ">=0.1.0"
-    - image:
-        repoURL: ghcr.io/sb1975/kubernetes-deviation-frontend
-        semverConstraint: ">=0.1.0"

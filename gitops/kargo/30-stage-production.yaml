@@ -21,25 +21,6 @@ spec:
               - branch: main
                 path: ./src
 
-        - uses: kustomize-set-image
-          config:
-            path: ./src/gitops/apps/k8s-deviation/overlays/production
-            images:
-              - image: ghcr.io/sb1975/kubernetes-deviation-backend
-                tag: ${{ imageFrom("ghcr.io/sb1975/kubernetes-deviation-backend").Tag }}
-              - image: ghcr.io/sb1975/kubernetes-deviation-frontend
-                tag: ${{ imageFrom("ghcr.io/sb1975/kubernetes-deviation-frontend").Tag }}
-
-        - uses: git-commit
-          config:
-            path: ./src
-            message: "promote(prod): update backend/frontend images"
-
-        - uses: git-push
-          config:
-            path: ./src
-            branch: main
-
   verification:
     analysisTemplates:
       - name: verify-production-api
