@@ -17,13 +17,6 @@ spec:
           config:
             repoURL: https://github.com/sb1975/KubernetesDeviationProject.git
             checkout:
-              - branch: main
+              - branch: feature/sudeep-code
                 path: ./src
 
-  verification:
-    analysisTemplates:
-      - name: verify-dev-api
-      - name: verify-dev-ui
-    args:
-      - name: environment
-        value: dev

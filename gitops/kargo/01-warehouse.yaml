@@ -8,5 +8,5 @@ spec:
   subscriptions:
     - git:
         repoURL: https://github.com/sb1975/KubernetesDeviationProject.git
-        branch: main
+        branch: feature/sudeep-code
         path: gitops/apps/k8s-deviation
