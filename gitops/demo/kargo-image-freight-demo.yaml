@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kargo-image-demo
+  labels:
+    kargo.akuity.io/project: "true"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: kargo-image-demo
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: kargo-image-demo
+  namespace: kargo-image-demo
+spec:
+  promotionPolicies:
+    - stageSelector:
+        name: dev
+      autoPromotionEnabled: true
+    - stageSelector:
+        name: staging
+      autoPromotionEnabled: true
+    - stageSelector:
+        name: production
+      autoPromotionEnabled: false
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: image-freight
+  namespace: kargo-image-demo
+spec:
+  interval: 1m
+  subscriptions:
+    - image:
+        repoURL: public.ecr.aws/nginx/nginx
+        semverConstraint: ">=1.27.0"
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+  namespace: kargo-image-demo
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: image-freight
+      sources:
+        direct: true
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: staging
+  namespace: kargo-image-demo
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: image-freight
+      sources:
+        stages:
+          - dev
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: production
+  namespace: kargo-image-demo
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: image-freight
+      sources:
+        stages:
+          - staging

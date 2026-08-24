@@ -2,6 +2,11 @@
 
 This demo uses three local kind clusters and a sample image-tag Freight change.
 
+For a presenter-friendly walkthrough, use:
+
+- `gitops/demo/KARGO_ARCHITECTURE_DEMO_SLIDES.md`
+- `gitops/demo/run_kargo_demo.sh`
+
 ## Objective
 
 - Keep three environments isolated by cluster:
@@ -24,6 +29,10 @@ Staging and production remain on prior tags until promoted.
 Run:
 
 - bash gitops/demo/ensure_three_clusters.sh
+
+Optional one-command guided run:
+
+- bash gitops/demo/run_kargo_demo.sh
 
 Expected outcome:
 
